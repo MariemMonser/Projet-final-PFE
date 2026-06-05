@@ -1,0 +1,22 @@
+﻿WMSMVSTD;Mouvements par article;ELEONETECH;16/04/2026;13:41:13;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+---;---;---;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+CONSSMV1;Mouvements par article;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+Sélection;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+FCY;Site;AZB;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ZFCY; ;ELEONETECH;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ITMREF;Article;PRC00001122;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ZITMREF; ;Interrupteur Electronique Gerb;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+LOTSEL;Lot;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+LOTBLK;Lot blanc;Non;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+SERNUMSTR;Série début;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+SERNUMEND;Série fin;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+INQLTI;Durée consultation;470;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+SRTCOD;Ordre de tri;Date imputation (-);;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+---;---;---;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+WMSMVSTD;Mouvements par article;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+STOFCY;IPTDAT;LOT;PCU;QTYPCU;STU;QTYSTU;STA;LOC;SLO;SERNUM;BEFSTO;SERFIN;AFTSTO;QLYCTLDEM;TRSTYP;MVTDES;PJT;DLUDAT;NEWLTIDAT;BPRNUM;VCRTYPTXT;VCRNUM;VCRLIN;VCRTYPORIT;VCRNUMORI;VCRLINORI;BPSLOT;SHLDAT;ACTQTY;POT;OWNER;PCUORI;BETCPY;PCUSTUORI;ACCCUR;AMTORD;AMTVAL;VARORD;VARVAL;PRIORD;PRIVAL;PRINAT;AMTDEV;TRSFAM;NUMVCR;GTE;CREUSR;CREDAT;CRETIM;CCE1;PALNUM;CTRNUM
+Site;Imputation;Lot;UC;Quantité;US;Quantité US;Statut;Emplacement;S/lot;Série début;Stock avant;Série fin;Stock après;Dem analyse;Type mouvement;Désignation mvt;Affaire;DLU;Recontrôle;Tiers;Type pièce;Pièce;No ligne;Type pièce origine;Pièce origine;No ligne pièce orig;Lot fourn;Péremption;Quantité active;Titre;Propriétaire;UC origine;Inter-sociétés;Coeff. origine;Devise;Montant ordre;Montant mouvement;Variation ordre;Variation mouvement;Prix ordre;Prix valorisé;Nature prix origine;Ecart non absorbé;Famille mouvement stock;Pièce comptable;Type de pièce;Opérateur création;Date création;Heure;Analytique;Identifiant 1;Identifiant 2
+AZB;23/12/2025;;UN;-1;UN;-1;A;CM1A01C;;;1;;0;;Sortie diverse;;;31/12/2999;31/12/2999;;Sortie diverse;SOM20255245461;4000;;;0;;31/12/2999;-1;0;AZB;UN;Non;1;TND;-74,86;-74,86;-74,86;-74,86;74,865;74,865;Prix moyen pondéré;0;SDV;;;IBMA;23/12/2025;1137;1511;;

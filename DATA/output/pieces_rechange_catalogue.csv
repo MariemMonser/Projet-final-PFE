@@ -1,0 +1,26 @@
+﻿id,equipement,code_prc,designation,cout_tnd,code_prc_format,created_at
+1,Fer à souder,587,Elément chauffant wsp80,250.0,PRC00000587,2026-06-01 21:15:31
+2,Fer à souder,588,Fourreau wsp80,15.86,PRC00000588,2026-06-01 21:15:31
+3,Fer à souder,843,Bras wsp80,480.0,PRC00000843,2026-06-01 21:15:31
+4,Fer à souder,1084,Bras wxp120,507.29,PRC00001084,2026-06-01 21:15:31
+5,Fer à souder,1330,Filtre aspirateurs fer à souder,29.0,PRC00001330,2026-06-01 21:15:31
+6,Fer à souder,1901,Bras de soudure ersa/24v 150w,560.54,PRC00001901,2026-06-01 21:15:31
+7,Compresseurs,1958,Purgeur temporisé,360.0,PRC00001958,2026-06-01 21:15:31
+8,Compresseurs,1080,Filtre à air ceccato,71.67,PRC00001080,2026-06-01 21:15:31
+9,Compresseurs,1081,Filtre à huile ceccato,86.5,PRC00001081,2026-06-01 21:15:31
+10,Compresseurs,1124,Filtre séparateur ceccato,478.4,PRC00001124,2026-06-01 21:15:31
+11,Compresseurs,1125,Panneau filtrant ceccato,81.88,PRC00001125,2026-06-01 21:15:31
+12,Compresseurs,2372,Bloc vis compresseur,1116.0,PRC00002372,2026-06-01 21:15:31
+13,Compresseurs,2510,Kit entretien compresseur,787.6,PRC00002510,2026-06-01 21:15:31
+14,Compresseurs,1220,Huile compresseurs 20l,720.0,PRC00001220,2026-06-01 21:15:31
+15,ROOFTOP,935,Moteur ventilateur 50gh,2439.0,PRC00000935,2026-06-01 21:15:31
+16,ROOFTOP,1045,Compresseur 50gh,9000.0,PRC00001045,2026-06-01 21:15:31
+17,ROOFTOP,1047,Fereon r407c,40.8,PRC00001047,2026-06-01 21:15:31
+18,ROOFTOP,2645,Contacteur 220v rooftop,162.0,PRC00002645,2026-06-01 21:15:31
+19,ROOFTOP,1385,Roullement-rooftop,63.0,PRC00001385,2026-06-01 21:15:31
+20,ROOFTOP,2418,Ventillateur turbine rooftop,1080.0,PRC00002418,2026-06-01 21:15:31
+21,ROOFTOP,2419,Roulement rooftop,216.0,PRC00002419,2026-06-01 21:15:31
+22,Manutention,1040,Roue motrice gerbeur,420.0,PRC00001040,2026-06-01 21:15:31
+23,Manutention,1041,Roue d'appuie gerbeur,386.0,PRC00001041,2026-06-01 21:15:31
+24,Manutention,1122,Interrupteur electronique gerbeur,74.86,PRC00001122,2026-06-01 21:15:31
+25,Manutention,999,Moteur monte rideau,533.59,PRC00000999,2026-06-01 21:15:31

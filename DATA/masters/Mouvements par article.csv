@@ -1,0 +1,21 @@
+﻿"WMSARSTD";"Stocks articles";"ELEONETECH";"16/04/2026";"13:44:51";
+"---";"---";"---"
+"CONSSAR1";"Stocks articles";
+"";""
+"Sélections";
+"FCY";"Site stock";"AZB";
+"ZFCY";" ";"El Azib";
+"ITMREFSTR";"Article début";"PRC00001958";
+"ZITMREFSTR";" ";"Purgeur temporisé ";
+"ITMREFEND";"Article fin";"PRC00001958";
+"ZITMREFEND";" ";"Purgeur temporisé ";
+"";""
+"";
+"SRTKEY";"Ordre de tri";"Numéro article";
+"---";"---";"---"
+"WMSARSTD";"Stocks articles";
+"";""
+"";
+"ITMREF";"ITMDES1";"PHYSTO";"CTLSTO";"REJSTO";"TOTSTO";"AVASTO";"PLFSTO";"ORDSTO";"DETSHT";"GLOALL";"GLOSHT";"SALSTO";"TSICOD3";
+"Article";"Désignation";"Stock interne 'A'";"Stock interne 'Q'";"Stock interne 'R'";"Stock interne total";"Stock disponible";"Stock attente rangt total";"Sto commandé";"Manquant détail";"Alloué global";"Manquant global";"En cde client";"Client Final";
+"PRC00001958";"Purgeur temporisé ";"4";"0";"0";"4";"4";"0";"0";"0";"0";"0";"0";"1";
