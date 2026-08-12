@@ -25,7 +25,7 @@ const ResetPasswordDemandePage = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-950 to-blue-700 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
         <h2 className="text-xl font-bold text-gray-800 mb-2">Mot de passe oublie</h2>
-        <p className="text-gray-500 text-sm mb-6">Un lien valable 30 min sera envoye a votre email.</p>
+        <p className="text-gray-500 text-sm mb-6">Un mot de passe temporaire sera envoye a votre adresse email.</p>
 
         {message && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
@@ -47,7 +47,7 @@ const ResetPasswordDemandePage = () => {
             />
             <button type="submit" disabled={loading}
               className="w-full py-3 bg-blue-900 text-white rounded-lg hover:bg-blue-800 disabled:opacity-60">
-              {loading ? 'Envoi...' : 'Envoyer le lien'}
+              {loading ? 'Envoi...' : 'Recevoir mon mot de passe temporaire'}
             </button>
           </form>
         )}

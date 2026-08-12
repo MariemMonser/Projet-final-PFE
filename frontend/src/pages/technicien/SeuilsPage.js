@@ -1,7 +1,5 @@
-// ============================================================
-// SEUILS PAGE - TECHNICIEN
-// Gestion des seuils de consommation et alertes
-// ============================================================
+
+
 import React, { useState, useEffect } from 'react';
 import { monitoringAPI, usersAPI } from '../../api';
 
@@ -18,7 +16,7 @@ const SeuilsPage = () => {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
-  // Get current user name from database using JWT token
+  
   useEffect(() => {
     const getCurrentUser = async () => {
       const token = localStorage.getItem('token');
@@ -35,12 +33,12 @@ const SeuilsPage = () => {
               if (userData.prenom || userData.nom) {
                 technicianName = `${userData.prenom || ''} ${userData.nom || ''}`.trim();
               }
-            } catch { /* silencieux */ }
+            } catch {  }
           }
-        } catch { /* silencieux */ }
+        } catch {  }
       }
       
-      // Set current user with the name
+      
       setCurrentUser({ nom: technicianName, prenom: '' });
       
       loadData();
@@ -49,7 +47,7 @@ const SeuilsPage = () => {
     getCurrentUser();
   }, []);
 
-  // Load alert history
+  
   const loadAlertHistory = async () => {
     try {
       const response = await monitoringAPI.getAlertHistory();
@@ -59,7 +57,7 @@ const SeuilsPage = () => {
     }
   };
 
-  // Send manual alert with custom comment
+  
   const sendManualAlert = async () => {
     if (!commentaire.trim()) {
       setError('Veuillez ajouter un commentaire avant d\'envoyer l\'alerte');
@@ -87,9 +85,9 @@ const SeuilsPage = () => {
       });
       
       console.log('Alerte manuelle envoyée avec succès');
-      setCommentaire(''); // Clear comment after sending
+      setCommentaire(''); 
       
-      // Optionally refresh alerts to show they've been sent
+      
       loadData();
       
     } catch (emailErr) {
@@ -168,7 +166,7 @@ const SeuilsPage = () => {
         </div>
       )}
 
-      {/* Seuils Actuels */}
+      
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold text-gray-800">Seuils de Consommation</h2>
@@ -206,7 +204,7 @@ const SeuilsPage = () => {
         </div>
       </div>
 
-      {/* Alertes Actives */}
+      
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold text-gray-800">
@@ -252,7 +250,7 @@ const SeuilsPage = () => {
               </div>
             ))}
             
-            {/* Manual alert sending section */}
+            
             <div className="border rounded-lg p-4 bg-blue-50">
               <h4 className="font-semibold mb-3 text-blue-800">Envoyer l'alerte</h4>
               
@@ -344,7 +342,7 @@ const SeuilsPage = () => {
         </div>
       )}
 
-      {/* Modal de modification des seuils */}
+      
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">

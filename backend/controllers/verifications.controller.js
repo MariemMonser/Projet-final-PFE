@@ -1,11 +1,9 @@
-// ============================================================
-// VERIFICATIONS QUOTIDIENNES CONTROLLER
-// ============================================================
+
+
 const db = require('../config/db');
 
 const today = () => new Date().toISOString().split('T')[0];
 
-// GET — vérifications du jour pour le technicien connecté
 const getAujourdhui = async (req, res) => {
   const technicien = `${req.user.prenom} ${req.user.nom}`;
   try {
@@ -22,7 +20,6 @@ const getAujourdhui = async (req, res) => {
   }
 };
 
-// POST — sauvegarder (insert ou update) une vérification
 const sauvegarder = async (req, res) => {
   const technicien = `${req.user.prenom} ${req.user.nom}`;
   const { equipement_id, equipement_nom, statut, observation } = req.body;
@@ -51,7 +48,6 @@ const sauvegarder = async (req, res) => {
   }
 };
 
-// GET — toutes les vérifications (responsable / admin)
 const getAll = async (req, res) => {
   const { date } = req.query;
   try {
@@ -68,4 +64,49 @@ const getAll = async (req, res) => {
   }
 };
 
-module.exports = { getAujourdhui, sauvegarder, getAll };
+const getAujourdhuiSousEquip = async (req, res) => {
+  const technicien = `${req.user.prenom} ${req.user.nom}`;
+  try {
+    const result = await db.query(
+      `SELECT * FROM verifications_sous_equip
+       WHERE technicien = $1 AND date_verification = $2
+       ORDER BY equipement_nom ASC, sous_equip_nom ASC`,
+      [technicien, today()]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erreur getAujourdhuiSousEquip:', err);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};
+
+const sauvegarderSousEquip = async (req, res) => {
+  const technicien = `${req.user.prenom} ${req.user.nom}`;
+  const { sous_equip_id, sous_equip_nom, equipement_id, equipement_nom, statut, observation } = req.body;
+
+  if (!sous_equip_id || !sous_equip_nom || !statut) {
+    return res.status(400).json({ message: 'sous_equip_id, sous_equip_nom et statut sont requis.' });
+  }
+  if (!['ok', 'probleme', 'hors_service'].includes(statut)) {
+    return res.status(400).json({ message: 'Statut invalide.' });
+  }
+
+  try {
+    const result = await db.query(
+      `INSERT INTO verifications_sous_equip
+         (sous_equip_id, sous_equip_nom, equipement_id, equipement_nom, technicien, date_verification, statut, observation)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (sous_equip_id, technicien, date_verification)
+       DO UPDATE SET statut = $7, observation = $8, created_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [sous_equip_id, sous_equip_nom, equipement_id || null, equipement_nom || null,
+       technicien, today(), statut, observation || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erreur sauvegarderSousEquip:', err);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};
+
+module.exports = { getAujourdhui, sauvegarder, getAll, getAujourdhuiSousEquip, sauvegarderSousEquip };

@@ -1,9 +1,8 @@
-// ============================================================
-// PAGE PLANIFICATION PREVENTIVE (RESPONSABLE)
-// Ultra-premium modern planification & scheduling interface
-// ============================================================
+
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { equipementsAPI, monitoringAPI, usersAPI } from '../../api';
+import { useAuth } from '../../context/AuthContext';
 
 const initialForm = {
   equipementId: '',
@@ -21,7 +20,6 @@ const statuts = ['Planifiee', 'En cours', 'Terminee', 'Reportee'];
 const periodicites = ['Hebdomadaire', 'Mensuelle', 'Trimestrielle', 'Semestrielle', 'Annuelle'];
 const priorites = ['Basse', 'Normale', 'Haute', 'Critique'];
 
-// Helpers de parsing pour la vue premium
 const parseTechnicien = (str) => {
   if (!str) return { name: '-', email: '' };
   const match = str.match(/^(.*?)\s*<(.*?)>$/);
@@ -49,16 +47,24 @@ const parseDescription = (desc) => {
 };
 
 const PlanificationPreventivePage = () => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Administrateur';
+
   const [equipements, setEquipements] = useState([]);
   const [techniciens, setTechniciens] = useState([]);
   const [interventions, setInterventions] = useState([]);
   const [form, setForm] = useState(initialForm);
+  const [activeListTab, setActiveListTab] = useState('planifiees'); // 'planifiees' | 'terminees' | 'curatives'
   const [filtreStatut, setFiltreStatut] = useState('Tous');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [erreur, setErreur] = useState('');
+
+  // Edit modal state: holds full intervention + new statut
+  const [editModal, setEditModal] = useState(null); // { intervention, statut }
+  const [editSaving, setEditSaving] = useState(false);
 
   const chargerDonnees = async () => {
     try {
@@ -85,25 +91,41 @@ const PlanificationPreventivePage = () => {
     chargerDonnees();
   }, []);
 
-  const interventionsPreventives = useMemo(() => {
-    return interventions
-      .filter((intervention) => intervention.type_intervention === 'Preventive')
-      .filter((intervention) => {
-        const statutOk = filtreStatut === 'Tous' || intervention.statut === filtreStatut;
-        const texte = `${intervention.description || ''} ${intervention.technicien || ''}`.toLowerCase();
-        const rechercheOk = texte.includes(searchTerm.toLowerCase());
-        return statutOk && rechercheOk;
-      });
-  }, [interventions, filtreStatut, searchTerm]);
+  const prevPlanifiees = useMemo(() =>
+    interventions.filter(i => i.type_intervention === 'Preventive' && ['Planifiee','En cours','Reportee'].includes(i.statut))
+      .filter(i => {
+        const txt = `${i.description || ''} ${i.technicien || ''}`.toLowerCase();
+        return (filtreStatut === 'Tous' || i.statut === filtreStatut) && txt.includes(searchTerm.toLowerCase());
+      }), [interventions, filtreStatut, searchTerm]);
+
+  const prevTerminees = useMemo(() =>
+    interventions.filter(i => i.type_intervention === 'Preventive' && i.statut === 'Terminee')
+      .filter(i => {
+        const txt = `${i.description || ''} ${i.technicien || ''}`.toLowerCase();
+        return txt.includes(searchTerm.toLowerCase());
+      }), [interventions, searchTerm]);
+
+  const curatives = useMemo(() =>
+    interventions.filter(i => i.type_intervention === 'Curative')
+      .filter(i => {
+        const txt = `${i.description || ''} ${i.technicien || ''}`.toLowerCase();
+        return (filtreStatut === 'Tous' || i.statut === filtreStatut) && txt.includes(searchTerm.toLowerCase());
+      }), [interventions, filtreStatut, searchTerm]);
+
+  const interventionsPreventives = activeListTab === 'terminees' ? prevTerminees
+    : activeListTab === 'curatives' ? curatives
+    : prevPlanifiees;
 
   const stats = useMemo(() => {
-    const total = interventionsPreventives.length;
-    const planifiees = interventionsPreventives.filter((item) => item.statut === 'Planifiee').length;
-    const enCours = interventionsPreventives.filter((item) => item.statut === 'En cours').length;
-    const terminees = interventionsPreventives.filter((item) => item.statut === 'Terminee').length;
-
-    return { total, planifiees, enCours, terminees };
-  }, [interventionsPreventives]);
+    const prev = interventions.filter(i => i.type_intervention === 'Preventive');
+    return {
+      total:     prev.length,
+      planifiees: prev.filter(i => ['Planifiee','En cours'].includes(i.statut)).length,
+      enCours:   prev.filter(i => i.statut === 'En cours').length,
+      terminees: prev.filter(i => i.statut === 'Terminee').length,
+      curatives: interventions.filter(i => i.type_intervention === 'Curative').length,
+    };
+  }, [interventions]);
 
   const handleChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -156,6 +178,29 @@ const PlanificationPreventivePage = () => {
     }
   };
 
+  const modifierStatut = async () => {
+    if (!editModal) return;
+    setEditSaving(true);
+    try {
+      const { intervention, statut } = editModal;
+      await monitoringAPI.updateIntervention(intervention.id, {
+        date_intervention:  intervention.date_intervention,
+        type_intervention:  intervention.type_intervention,
+        description:        intervention.description,
+        technicien:         intervention.technicien,
+        cout:               intervention.cout || 0,
+        statut,
+      });
+      setMessage('Statut mis à jour.');
+      setEditModal(null);
+      await chargerDonnees();
+    } catch (err) {
+      setErreur(err.response?.data?.message || 'Erreur mise à jour.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const supprimerIntervention = async (id) => {
     if (!window.confirm('Supprimer cette intervention planifiée ?')) return;
     try {
@@ -169,7 +214,7 @@ const PlanificationPreventivePage = () => {
     }
   };
 
-  // Obtenir la classe css d'un badge de statut
+  
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case 'Planifiee':
@@ -187,7 +232,7 @@ const PlanificationPreventivePage = () => {
 
   return (
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
-      {/* En-tête */}
+      
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Planification Préventive</h1>
@@ -200,7 +245,7 @@ const PlanificationPreventivePage = () => {
         </div>
       </div>
 
-      {/* Alertes d'état */}
+      
       {(erreur || message) && (
         <div className={`p-4 rounded-xl border flex items-center gap-3 text-xs font-medium shadow-sm transition-all duration-300 ${erreur ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
           {erreur ? (
@@ -216,42 +261,29 @@ const PlanificationPreventivePage = () => {
         </div>
       )}
 
-      {/* Cartes statistiques haut de gamme */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 text-lg shadow-inner">📋</div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Préventif</p>
-            <p className="text-xl font-extrabold text-slate-800 mt-1">{stats.total}</p>
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {[
+          { label: 'Total Préventif', value: stats.total,     bg: 'bg-blue-50',    icon: '📋', color: 'text-slate-800'   },
+          { label: 'Planifiées',      value: stats.planifiees, bg: 'bg-indigo-50',  icon: '📅', color: 'text-indigo-900'  },
+          { label: 'En cours',        value: stats.enCours,    bg: 'bg-amber-50',   icon: '⚡', color: 'text-amber-800'   },
+          { label: 'Terminées',       value: stats.terminees,  bg: 'bg-emerald-50', icon: '✅', color: 'text-emerald-800' },
+          { label: 'Curatives',       value: stats.curatives,  bg: 'bg-rose-50',    icon: '🔧', color: 'text-rose-800'    },
+        ].map(({ label, value, bg, icon, color }) => (
+          <div key={label} className={`${bg} p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3`}>
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-lg shadow-inner">{icon}</div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+              <p className={`text-xl font-extrabold ${color} mt-0.5`}>{value}</p>
+            </div>
           </div>
-        </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 text-lg shadow-inner">📅</div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Planifiées</p>
-            <p className="text-xl font-extrabold text-indigo-900 mt-1">{stats.planifiees}</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600 text-lg shadow-inner">⚡</div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">En cours</p>
-            <p className="text-xl font-extrabold text-amber-800 mt-1">{stats.enCours}</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 text-lg shadow-inner">✅</div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Terminées</p>
-            <p className="text-xl font-extrabold text-emerald-800 mt-1">{stats.terminees}</p>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Formulaire + Planning empilés */}
+      
       <div className="flex flex-col gap-6">
-        {/* Formulaire */}
-        <form onSubmit={handleSubmit} className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6 space-y-5">
+
+        {!isAdmin && <form onSubmit={handleSubmit} className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6 space-y-5">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -259,7 +291,7 @@ const PlanificationPreventivePage = () => {
             <h2 className="text-sm font-bold text-slate-800">Planifier une intervention</h2>
           </div>
 
-          {/* Équipement */}
+          
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Équipement cible *</label>
             <select
@@ -402,18 +434,36 @@ const PlanificationPreventivePage = () => {
               </>
             )}
           </button>
-        </form>
+        </form>}
 
-        {/* Planning préventif */}
+
         <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
-          {/* Entête de liste avec filtres et recherche */}
+          
           <div className="p-5 border-b border-slate-100 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-gradient-to-r from-slate-50/50 to-white">
-            <div>
-              <h2 className="text-sm font-bold text-slate-800">Planning Préventif Actif</h2>
-              <p className="text-[10px] text-slate-400 mt-0.5">Suivi en temps réel des récurrences planifiées</p>
+            <div className="flex gap-1 flex-wrap">
+              {[
+                { id: 'planifiees', label: 'Planifiées / En cours', count: prevPlanifiees.length },
+                { id: 'terminees',  label: 'Préventives Terminées',  count: prevTerminees.length },
+                { id: 'curatives',  label: 'Curatives',              count: curatives.length },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveListTab(tab.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    activeListTab === tab.id
+                      ? 'bg-indigo-900 text-white shadow'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    activeListTab === tab.id ? 'bg-white/20 text-white' : 'bg-white text-slate-500'
+                  }`}>{tab.count}</span>
+                </button>
+              ))}
             </div>
             <div className="flex flex-col sm:flex-row gap-3.5">
-              {/* Recherche */}
+              
               <div className="relative flex items-center">
                 <svg className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -427,7 +477,7 @@ const PlanificationPreventivePage = () => {
                 />
               </div>
 
-              {/* Filtre */}
+              
               <div className="relative flex items-center">
                 <select
                   value={filtreStatut}
@@ -444,7 +494,7 @@ const PlanificationPreventivePage = () => {
             </div>
           </div>
 
-          {/* Table list */}
+          
           {loading ? (
             <div className="p-16 flex flex-col items-center justify-center gap-3 text-slate-400">
               <svg className="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
@@ -477,7 +527,7 @@ const PlanificationPreventivePage = () => {
 
                     return (
                       <tr key={intervention.id} className="hover:bg-slate-50/40 align-top transition-all duration-150">
-                        {/* Cellule 1 : Date Premium */}
+                        
                         <td className="px-5 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 shrink-0 bg-indigo-50 border border-indigo-100 rounded-xl flex flex-col items-center justify-center text-indigo-700 shadow-sm">
@@ -497,7 +547,7 @@ const PlanificationPreventivePage = () => {
                           </div>
                         </td>
 
-                        {/* Cellule 2 : Intervenant Premium */}
+                        
                         <td className="px-5 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-700 text-white flex items-center justify-center font-black text-[11px] shadow-sm border-2 border-white ring-2 ring-indigo-50">
@@ -510,17 +560,17 @@ const PlanificationPreventivePage = () => {
                           </div>
                         </td>
 
-                        {/* Cellule 3 : Fiche Technique & Grid de Détails */}
+                        
                         <td className="px-5 py-4 text-xs text-slate-700 max-w-xl">
                           <div className="space-y-3.5">
-                            {/* Badges de structure */}
+                            
                             <div className="flex flex-wrap items-center gap-2">
-                              {/* Nom équipement */}
+                              
                               <span className="px-2.5 py-0.5 bg-slate-800 text-white rounded-md text-[10px] font-extrabold shadow-sm">
                                 🔌 {details.Equipement || 'Équipement'}
                               </span>
 
-                              {/* Priorité */}
+                              
                               {details.Priorite && (
                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shadow-sm ${
                                   details.Priorite === 'Critique'
@@ -535,7 +585,7 @@ const PlanificationPreventivePage = () => {
                                 </span>
                               )}
 
-                              {/* Périodicité */}
+                              
                               {details.Periodicite && (
                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
                                   details.Periodicite === 'Hebdomadaire'
@@ -552,14 +602,14 @@ const PlanificationPreventivePage = () => {
                                 </span>
                               )}
 
-                              {/* Durée estimée */}
+                              
                               {details['Duree estimee'] && (
                                 <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-[10px] font-bold">
                                   ⏳ {details['Duree estimee']}
                                 </span>
                               )}
 
-                              {/* Heure */}
+                              
                               {details.Heure && (
                                 <span className="px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-200 rounded-md text-[10px] font-bold flex items-center gap-1">
                                   🕒 {details.Heure}
@@ -567,7 +617,7 @@ const PlanificationPreventivePage = () => {
                               )}
                             </div>
 
-                            {/* Bloc tâches */}
+                            
                             <div className="p-3 bg-slate-50/70 border border-slate-100 rounded-xl">
                               <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Tâches planifiées</p>
                               <p className="text-xs font-semibold text-slate-700 leading-relaxed">
@@ -575,7 +625,7 @@ const PlanificationPreventivePage = () => {
                               </p>
                             </div>
 
-                            {/* Bloc commentaire */}
+                            
                             {details.Commentaire && (
                               <div className="pl-3 border-l-2 border-indigo-500 py-0.5">
                                 <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-0.5">Remarque responsable</p>
@@ -587,19 +637,29 @@ const PlanificationPreventivePage = () => {
                           </div>
                         </td>
 
-                        {/* Cellule 4 : Statut (lecture seule) + Supprimer */}
+                        
                         <td className="px-5 py-4 whitespace-nowrap">
                           <div className="flex flex-col gap-2 items-start">
                             <span className={`px-3 py-1 rounded-xl text-xs font-bold shadow-sm ${getStatusBadgeClass(intervention.statut)}`}>
                               {intervention.statut || 'Planifiee'}
                             </span>
-                            {intervention.statut === 'Planifiee' && (
-                              <button
-                                onClick={() => supprimerIntervention(intervention.id)}
-                                className="px-2.5 py-1 text-[10px] font-bold text-rose-600 border border-rose-200 bg-rose-50 rounded-lg hover:bg-rose-100 transition-all"
-                              >
-                                Supprimer
-                              </button>
+                            {!isAdmin && (
+                              <>
+                                <button
+                                  onClick={() => setEditModal({ intervention, statut: intervention.statut })}
+                                  className="px-2.5 py-1 text-[10px] font-bold text-indigo-600 border border-indigo-200 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-all"
+                                >
+                                  Modifier statut
+                                </button>
+                                {['Planifiee','En cours'].includes(intervention.statut) && (
+                                  <button
+                                    onClick={() => supprimerIntervention(intervention.id)}
+                                    className="px-2.5 py-1 text-[10px] font-bold text-rose-600 border border-rose-200 bg-rose-50 rounded-lg hover:bg-rose-100 transition-all"
+                                  >
+                                    Supprimer
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>
@@ -618,6 +678,43 @@ const PlanificationPreventivePage = () => {
           )}
         </div>
       </div>
+
+      {/* Edit status modal */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800">Modifier le statut</h3>
+              <button onClick={() => setEditModal(null)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nouveau statut</label>
+              <select
+                value={editModal.statut}
+                onChange={e => setEditModal(prev => ({ ...prev, statut: e.target.value }))}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {statuts.map(s => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={modifierStatut}
+                disabled={editSaving}
+                className="flex-1 py-2.5 bg-indigo-900 text-white rounded-xl text-xs font-bold hover:bg-indigo-800 disabled:opacity-60 transition"
+              >
+                {editSaving ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+              <button
+                onClick={() => setEditModal(null)}
+                className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

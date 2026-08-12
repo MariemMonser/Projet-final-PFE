@@ -1,8 +1,5 @@
-// ============================================================
-// PAGE MES INTERVENTIONS (TECHNICIEN)
-// Section 1 : interventions préventives planifiées
-// Section 2 : fiches terrain soumises via QR
-// ============================================================
+
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { monitoringAPI, kpiAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -45,7 +42,7 @@ const extraireDetails = (description = '') => {
 export default function MesInterventionsPage() {
   const { user } = useAuth();
 
-  /* ── Tâches préventives (filtrées côté serveur) ── */
+  
   const [taches, setTaches]             = useState([]);
   const [loading, setLoading]           = useState(true);
   const [erreur, setErreur]             = useState('');
@@ -53,7 +50,7 @@ export default function MesInterventionsPage() {
   const [filtreStatut, setFiltreStatut] = useState('Tous');
   const [searchTerm, setSearchTerm]     = useState('');
 
-  /* ── Fiches terrain ── */
+  
   const [fiches, setFiches]               = useState([]);
   const [fichesLoading, setFichesLoading] = useState(true);
   const [filtreFiche, setFiltreFiche]     = useState('Toutes');
@@ -85,7 +82,7 @@ export default function MesInterventionsPage() {
 
   useEffect(() => { chargerTout(); }, []);
 
-  /* ── Tâches préventives filtrées (déjà filtrées par technicien côté serveur) ── */
+  
   const interventionsPreventives = useMemo(() => {
     return taches.filter((i) => {
       const statutOk = filtreStatut === 'Tous' || i.statut === filtreStatut;
@@ -101,7 +98,7 @@ export default function MesInterventionsPage() {
     terminees:interventionsPreventives.filter((i) => i.statut === 'Terminee').length,
   }), [interventionsPreventives]);
 
-  /* ── Fiches terrain filtrées ── */
+  
   const fichesFiltrees = useMemo(() => {
     if (filtreFiche === 'Toutes') return fiches;
     return fiches.filter((f) => f.statut === filtreFiche);
@@ -135,7 +132,7 @@ export default function MesInterventionsPage() {
   return (
     <div className="p-6 space-y-8 bg-gray-50 min-h-full">
 
-      {/* ══ En-tête ══════════════════════════════════════════ */}
+      
       <div className="flex flex-wrap justify-between items-start gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Mes Interventions</h1>
@@ -153,7 +150,7 @@ export default function MesInterventionsPage() {
         </div>
       )}
 
-      {/* ══ SECTION 1 : Interventions planifiées ════════════ */}
+      
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-1 h-6 bg-blue-900 rounded-full"></div>
@@ -161,7 +158,7 @@ export default function MesInterventionsPage() {
           <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">{interventionsPreventives.length}</span>
         </div>
 
-        {/* Stats planifiées */}
+        
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: 'Total',     value: stats.total,     color: 'bg-white border-gray-200',       text: 'text-blue-900'  },
@@ -176,7 +173,7 @@ export default function MesInterventionsPage() {
           ))}
         </div>
 
-        {/* Table planifiées */}
+        
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-4 border-b border-gray-100 flex flex-wrap gap-3 items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-700">Mes tâches préventives assignées</h3>
@@ -248,7 +245,7 @@ export default function MesInterventionsPage() {
         </div>
       </div>
 
-      {/* ══ SECTION 2 : Fiches terrain soumises ════════════ */}
+      
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-1 h-6 bg-emerald-600 rounded-full"></div>
@@ -256,7 +253,7 @@ export default function MesInterventionsPage() {
           <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-xs font-semibold">{fiches.length}</span>
         </div>
 
-        {/* Stats fiches */}
+        
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: 'En attente', value: statsFiches.attente, color: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-700', icon: '⏳' },
@@ -273,7 +270,7 @@ export default function MesInterventionsPage() {
           ))}
         </div>
 
-        {/* Filtres fiches */}
+        
         <div className="flex gap-2 flex-wrap">
           {['Toutes', 'En attente', 'Validee', 'Rejetee'].map((f) => (
             <button key={f} onClick={() => setFiltreFiche(f)}
@@ -285,7 +282,7 @@ export default function MesInterventionsPage() {
           ))}
         </div>
 
-        {/* Cartes fiches */}
+        
         {fichesLoading ? (
           <div className="p-8 text-center text-gray-400">Chargement...</div>
         ) : fichesFiltrees.length === 0 ? (
@@ -301,7 +298,7 @@ export default function MesInterventionsPage() {
               const enCours   = f.action === 'Ouverture' && !f.date_cloture && f.statut === 'En attente';
               return (
                 <div key={f.id} className={`bg-white rounded-xl border shadow-sm p-4 space-y-3 transition ${enCours ? 'border-amber-300 ring-1 ring-amber-100' : 'border-gray-100 hover:border-blue-200'}`}>
-                  {/* Header carte */}
+                  
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2 flex-wrap">
                       {enCours ? (
@@ -325,7 +322,7 @@ export default function MesInterventionsPage() {
                     <span className="text-xs text-gray-400 font-mono">#{f.id}</span>
                   </div>
 
-                  {/* Timeline ouverture → clôture */}
+                  
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2">
                       <p className="text-xs text-green-600 font-bold mb-0.5">🔓 Ouverture</p>
@@ -345,7 +342,7 @@ export default function MesInterventionsPage() {
                     </div>
                   </div>
 
-                  {/* Équipement + type */}
+                  
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
                       <p className="text-xs text-gray-400 font-medium">Équipement</p>
@@ -357,7 +354,7 @@ export default function MesInterventionsPage() {
                     </div>
                   </div>
 
-                  {/* Observations ouverture */}
+                  
                   {f.description && (
                     <div className="bg-gray-50 rounded-lg px-3 py-2">
                       <p className="text-xs text-gray-400 font-medium mb-0.5">Observations (ouverture)</p>
@@ -365,7 +362,7 @@ export default function MesInterventionsPage() {
                     </div>
                   )}
 
-                  {/* Travaux effectués (clôture) */}
+                  
                   {f.description_cloture && (
                     <div className="bg-blue-50 rounded-lg px-3 py-2">
                       <p className="text-xs text-blue-500 font-bold mb-0.5">Travaux effectués (clôture)</p>
@@ -373,7 +370,7 @@ export default function MesInterventionsPage() {
                     </div>
                   )}
 
-                  {/* Intervention liée */}
+                  
                   {f.intervention_id && (
                     <span className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-semibold">
                       Liée à l'intervention planifiée #{f.intervention_id}
@@ -385,6 +382,7 @@ export default function MesInterventionsPage() {
           </div>
         )}
       </div>
+
     </div>
   );
 }

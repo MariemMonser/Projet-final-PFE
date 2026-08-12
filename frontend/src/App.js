@@ -1,18 +1,15 @@
-// ============================================================
-// APP.JS - Routes principales de l'application
-// ============================================================
+
+
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import AppLayout from './components/AppLayout';
 
-// Pages Auth
 import LoginPage                from './pages/auth/LoginPage';
 import ResetPasswordDemandePage from './pages/auth/ResetPasswordDemandePage';
 import ResetPasswordConfirmPage from './pages/auth/ResetPasswordConfirmPage';
 
-// Pages Admin
 import GestionUtilisateursPage from './pages/admin/GestionUtilisateursPage';
 import GestionEquipementsPage  from './pages/admin/GestionEquipementsPage';
 import AdminMonitoringPage     from './pages/admin/AdminMonitoringPage';
@@ -20,14 +17,13 @@ import AuditLogPage            from './pages/admin/AuditLogPage';
 import InterventionsStagingPage from './pages/admin/InterventionsStagingPage';
 import QrInterventionPage      from './pages/QrInterventionPage';
 
-// Pages Responsable
-import ListeEquipementsPage        from './pages/responsable/ListeEquipementsPage';
-import PlanificationPreventivePage from './pages/responsable/PlanificationPreventivePage';
+import ListeEquipementsPage           from './pages/responsable/ListeEquipementsPage';
+import PlanificationPreventivePage    from './pages/responsable/PlanificationPreventivePage';
 import ResponsableDashboardPage    from './pages/responsable/DashboardPage';
 import PowerBIDashboardPage        from './pages/responsable/PowerBIDashboardPage';
 import GestionPRCPage             from './pages/responsable/GestionPRCPage';
+import MaintenancePredictivePage  from './pages/responsable/MaintenancePredictivePage';
 
-// Pages Technicien
 import MesEquipementsPage       from './pages/technicien/MesEquipementsPage';
 import TechnicienMonitoringPage from './pages/technicien/MonitoringPage';
 import TechnicienDashboardPage  from './pages/technicien/DashboardPage';
@@ -38,10 +34,8 @@ import ScanEauPage             from './pages/technicien/ScanEauPage';
 import ScanElectricitePage     from './pages/technicien/ScanElecPage';
 import ScanInterventionPage    from './pages/technicien/ScanInterventionPage';
 
-// Pages publiques
 import InterventionPubliquePage from './pages/InterventionPubliquePage';
 
-// Page placeholder
 const Dashboard = ({ titre, icone = '🔧' }) => (
   <div className="p-8 flex items-center justify-center min-h-full">
     <div className="text-center">
@@ -52,7 +46,6 @@ const Dashboard = ({ titre, icone = '🔧' }) => (
   </div>
 );
 
-// Page 403
 const NonAutorise = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-50">
     <div className="text-center">
@@ -72,13 +65,13 @@ function App() {
       <BrowserRouter>
         <Routes>
 
-          {/* ── Routes publiques ─────────────────────────── */}
+          
           <Route path="/login"                 element={<LoginPage />} />
           <Route path="/reset-password"        element={<ResetPasswordDemandePage />} />
           <Route path="/reset-password/:token" element={<ResetPasswordConfirmPage />} />
           <Route path="/non-autorise"          element={<NonAutorise />} />
 
-          {/* ── Routes Administrateur ────────────────────── */}
+          
           <Route path="/admin" element={
             <PrivateRoute roles={['Administrateur']}>
               <AppLayout />
@@ -90,9 +83,10 @@ function App() {
             <Route path="audit"                 element={<AuditLogPage />} />
             <Route path="qr-intervention"       element={<QrInterventionPage />} />
             <Route path="interventions-terrain" element={<InterventionsStagingPage />} />
+            <Route path="interventions"         element={<PlanificationPreventivePage />} />
           </Route>
 
-          {/* ── Routes Responsable ───────────────────────── */}
+          
           <Route path="/responsable" element={
             <PrivateRoute roles={['Responsable', 'Administrateur']}>
               <AppLayout />
@@ -106,9 +100,10 @@ function App() {
             <Route path="kpis"                  element={<PowerBIDashboardPage />} />
             <Route path="seuils"                element={<SeuilsPage />} />
             <Route path="prc"                   element={<GestionPRCPage />} />
+            <Route path="maintenance-predictive" element={<MaintenancePredictivePage />} />
           </Route>
 
-          {/* ── Routes Technicien ────────────────────────── */}
+          
           <Route path="/technicien" element={
             <PrivateRoute roles={['Technicien', 'Administrateur', 'Responsable']}>
               <AppLayout />
@@ -121,16 +116,7 @@ function App() {
             <Route path="verifications" element={<VerificationsPage />} />
           </Route>
 
-          {/* ── Routes Lecteur ───────────────────────────── */}
-          <Route path="/lecteur" element={
-            <PrivateRoute roles={['Lecteur', 'Administrateur']}>
-              <AppLayout />
-            </PrivateRoute>
-          }>
-            <Route path="dashboard" element={<Dashboard titre="Tableau de bord Lecteur" icone="👁️" />} />
-          </Route>
-
-          {/* ── Routes Scan QR (publiques — login intégré dans la page) ── */}
+          
           <Route path="/scan/eau"          element={<ScanEauPage />} />
           <Route path="/scan/electricite"  element={<ScanElectricitePage />} />
           <Route path="/scan/intervention/:equipementId" element={<ScanInterventionPage />} />

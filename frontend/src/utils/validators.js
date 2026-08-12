@@ -1,7 +1,4 @@
-// ============================================================
-// VALIDATEURS CENTRALISÉS
-// Réutilisables dans tous les formulaires de l'application
-// ============================================================
+
 
 export const validerNom = (valeur, label = 'Ce champ') => {
   if (!valeur || !valeur.trim()) return `${label} est obligatoire.`;

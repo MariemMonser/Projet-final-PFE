@@ -1,9 +1,7 @@
-// ============================================================
-// PRC CONTROLLER - Gestion des pièces de rechange
-// ============================================================
+
+
 const db = require('../config/db');
 
-// ── GET /api/prc ─────────────────────────────────────────
 const getAll = async (req, res) => {
   try {
     const result = await db.query(`
@@ -20,7 +18,6 @@ const getAll = async (req, res) => {
   }
 };
 
-// ── POST /api/prc ─────────────────────────────────────────
 const creer = async (req, res) => {
   const { code_prc, designation, cout, stock, equipement_id } = req.body;
 
@@ -46,7 +43,6 @@ const creer = async (req, res) => {
   }
 };
 
-// ── PUT /api/prc/:id ──────────────────────────────────────
 const modifier = async (req, res) => {
   const { id } = req.params;
   const { code_prc, designation, cout, stock, equipement_id } = req.body;
@@ -80,32 +76,47 @@ const modifier = async (req, res) => {
   }
 };
 
-// ── PATCH /api/prc/:id/stock ──────────────────────────────
 const modifierStock = async (req, res) => {
   const { id } = req.params;
-  const { mouvement, quantite } = req.body; // mouvement: 'entree' | 'sortie'
+  const { mouvement, quantite, technicien, motif, intervention_staging_id, equipement } = req.body;
 
   if (!mouvement || !quantite || isNaN(quantite)) {
     return res.status(400).json({ message: 'Mouvement et quantité sont requis.' });
   }
 
   try {
-    const prc = await db.query('SELECT id, stock FROM prc WHERE id = $1', [id]);
-    if (prc.rows.length === 0) return res.status(404).json({ message: 'Pièce non trouvée.' });
+    const prcRow = await db.query('SELECT id, stock, code_prc, designation FROM prc WHERE id = $1', [id]);
+    if (prcRow.rows.length === 0) return res.status(404).json({ message: 'Pièce non trouvée.' });
 
-    const qty = parseInt(quantite);
-    const newStock = mouvement === 'entree'
-      ? prc.rows[0].stock + qty
-      : prc.rows[0].stock - qty;
+    const qty       = parseInt(quantite);
+    const stockAvant = prcRow.rows[0].stock;
+    const newStock  = mouvement === 'entree' ? stockAvant + qty : stockAvant - qty;
 
     if (newStock < 0) {
-      return res.status(400).json({ message: `Stock insuffisant. Stock actuel: ${prc.rows[0].stock}` });
+      return res.status(400).json({ message: `Stock insuffisant. Stock actuel: ${stockAvant}` });
     }
 
     const result = await db.query(
       'UPDATE prc SET stock = $1 WHERE id = $2 RETURNING *',
       [newStock, id]
     );
+
+    await db.query(
+      `INSERT INTO mouvements_prc
+         (prc_id, type_mouvement, quantite, stock_avant, stock_apres, intervention_staging_id, technicien, motif)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, mouvement, qty, stockAvant, newStock, intervention_staging_id || null, technicien || null, motif || null]
+    );
+
+    if (mouvement === 'sortie' && technicien) {
+      await db.query(
+        `INSERT INTO prc_notifications
+           (prc_id, code_prc, designation, quantite, stock_apres, technicien, equipement, intervention_staging_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [id, prcRow.rows[0].code_prc, prcRow.rows[0].designation, qty, newStock, technicien, equipement || null, intervention_staging_id || null]
+      );
+    }
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Erreur modifierStock prc:', err);
@@ -113,7 +124,42 @@ const modifierStock = async (req, res) => {
   }
 };
 
-// ── DELETE /api/prc/:id ───────────────────────────────────
+const getMouvements = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT * FROM mouvements_prc WHERE prc_id = $1 ORDER BY created_at DESC LIMIT 50`,
+      [id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erreur getMouvements prc:', err);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};
+
+const getNotificationsPrc = async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT * FROM prc_notifications ORDER BY created_at DESC LIMIT 100`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erreur getNotificationsPrc:', err);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};
+
+const marquerLuePrc = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query('UPDATE prc_notifications SET lu = TRUE WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};
+
 const supprimer = async (req, res) => {
   const { id } = req.params;
   try {
@@ -128,4 +174,4 @@ const supprimer = async (req, res) => {
   }
 };
 
-module.exports = { getAll, creer, modifier, modifierStock, supprimer };
+module.exports = { getAll, creer, modifier, modifierStock, supprimer, getMouvements, getNotificationsPrc, marquerLuePrc };

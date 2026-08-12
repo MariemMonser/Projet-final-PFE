@@ -1,7 +1,5 @@
-// ============================================================
-// QR INTERVENTION PAGE - Affichage du QR code du formulaire
-// IP modifiable pour scanner depuis mobile sur le reseau local
-// ============================================================
+
+
 import React, { useEffect, useState } from 'react';
 import { monitoringAPI } from '../api';
 
@@ -46,7 +44,7 @@ const QrInterventionPage = () => {
           Les techniciens le scannent pour remplir directement leur fiche d'intervention.
         </p>
 
-        {/* Parametres IP */}
+        
         <div style={styles.ipSection}>
           <span style={styles.ipLabel}>Adresse IP du serveur frontend</span>
           <div style={styles.ipRow}>
@@ -78,13 +76,13 @@ const QrInterventionPage = () => {
             </button>
           </div>
           <span style={styles.ipHint}>
-            URL generee : <strong>http://{ip}:{port}/intervention/nouveau</strong>
+            URL generee : <strong>http://{ip}:{port}</strong>
           </span>
         </div>
 
         {erreur && <div style={styles.errorBox}>{erreur}</div>}
 
-        {/* QR code */}
+        
         <div style={styles.qrWrapper}>
           {loading ? (
             <div style={styles.qrPlaceholder}>Generation...</div>
@@ -93,7 +91,7 @@ const QrInterventionPage = () => {
           ) : null}
         </div>
 
-        {/* URL */}
+        
         {qrData?.url && (
           <div style={styles.urlBox}>
             <span style={styles.urlLabel}>URL du formulaire</span>
@@ -103,7 +101,7 @@ const QrInterventionPage = () => {
           </div>
         )}
 
-        {/* Actions */}
+        
         <div style={styles.actions}>
           <button
             onClick={telecharger}

@@ -1,6 +1,3 @@
-// ============================================================
-// CONNEXION STAGING - eleonetech_staging
-// ============================================================
 const { Pool } = require('pg');
 
 const staging = new Pool(
@@ -16,7 +13,7 @@ const staging = new Pool(
         host:     process.env.DB_STAGING_HOST     || 'localhost',
         port:     parseInt(process.env.DB_STAGING_PORT) || 5432,
         user:     process.env.DB_STAGING_USER     || 'postgres',
-        password: process.env.DB_STAGING_PASSWORD || 'postgres123@',
+        password: process.env.DB_STAGING_PASSWORD || process.env.DB_PASSWORD,
         database: process.env.DB_STAGING_NAME     || 'eleonetech_staging',
         ssl: false,
         max: 5,

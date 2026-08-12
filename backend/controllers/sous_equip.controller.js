@@ -1,6 +1,5 @@
-// ============================================================
-// SOUS_EQUIP CONTROLLER — table sous_equip existante
-// ============================================================
+
+
 const db = require('../config/db');
 
 const logAction = async (idUser, action, ip = null) => {
@@ -14,7 +13,6 @@ const logAction = async (idUser, action, ip = null) => {
   }
 };
 
-// GET /api/sous-equip/by-equipement/:equipementId
 const getByEquipement = async (req, res) => {
   const { equipementId } = req.params;
   try {
@@ -32,7 +30,6 @@ const getByEquipement = async (req, res) => {
   }
 };
 
-// POST /api/sous-equip
 const creer = async (req, res) => {
   const { nom, equipement_id, statut = 'actif' } = req.body;
   const ip = req.ip;
@@ -72,7 +69,6 @@ const creer = async (req, res) => {
   }
 };
 
-// PUT /api/sous-equip/:id
 const modifier = async (req, res) => {
   const { id } = req.params;
   const { nom, statut } = req.body;
@@ -110,7 +106,6 @@ const modifier = async (req, res) => {
   }
 };
 
-// DELETE /api/sous-equip/:id
 const supprimer = async (req, res) => {
   const { id } = req.params;
   const ip = req.ip;
@@ -132,4 +127,20 @@ const supprimer = async (req, res) => {
   }
 };
 
-module.exports = { getByEquipement, creer, modifier, supprimer };
+const getAll = async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT se.id, se.equipement_id, se.nom, se.statut, e.nom AS equipement_nom
+       FROM sous_equip se
+       JOIN equipements e ON e.id = se.equipement_id
+       WHERE se.statut = 'actif'
+       ORDER BY e.nom ASC, se.nom ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erreur getAll sous_equip:', err);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};
+
+module.exports = { getByEquipement, getAll, creer, modifier, supprimer };

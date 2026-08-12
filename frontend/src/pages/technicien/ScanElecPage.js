@@ -1,6 +1,5 @@
-// ============================================================
-// SCAN ELECTRICITE PAGE - Saisie directe sans login
-// ============================================================
+
+
 import React, { useState } from 'react';
 import axios from 'axios';
 
@@ -23,7 +22,8 @@ const ScanElecPage = () => {
   const [saved, setSaved]     = useState(false);
   const [erreur, setErreur]   = useState('');
 
-  const today   = new Date().toISOString().split('T')[0];
+  const _d    = new Date();
+  const today = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
   const current = PHASES[step];
 
   const handleValeurChange = (val) => {
@@ -69,7 +69,7 @@ const ScanElecPage = () => {
     setErreur('');
   };
 
-  // ── SUCCÈS ────────────────────────────────────────────────
+  
   if (saved) {
     return (
       <div style={s.page}>
@@ -93,7 +93,7 @@ const ScanElecPage = () => {
     );
   }
 
-  // ── FORMULAIRE ────────────────────────────────────────────
+  
   return (
     <div style={s.page}>
       <div style={s.card}>
@@ -102,7 +102,7 @@ const ScanElecPage = () => {
         <h1 style={s.title}>Relevé Électricité</h1>
         <p style={s.muted}>{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
 
-        {/* Indicateur de progression */}
+        
         <div style={s.progressRow}>
           {PHASES.map((p, i) => (
             <div key={i} style={s.progressItem}>
@@ -124,7 +124,7 @@ const ScanElecPage = () => {
           ))}
         </div>
 
-        {/* Instruction */}
+        
         <div style={s.instructionBox}>
           <p style={s.instructionTitle}>
             Attendez le code <strong style={{ color: '#d97706', fontSize: 20 }}>{current.code}</strong> sur le compteur
@@ -165,7 +165,7 @@ const ScanElecPage = () => {
           </button>
         )}
 
-        {/* Résumé phases déjà saisies */}
+        
         {step > 0 && (
           <div style={s.resumeBox}>
             {PHASES.slice(0, step).map((p, i) => (

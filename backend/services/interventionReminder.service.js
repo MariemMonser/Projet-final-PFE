@@ -1,6 +1,5 @@
-// ============================================================
-// SERVICE RAPPELS EMAIL - Interventions preventives
-// ============================================================
+
+
 const nodemailer = require('nodemailer');
 const db = require('../config/db');
 
@@ -132,6 +131,39 @@ const envoyerRappel = async (intervention, technicien, joursAvant) => {
   });
 };
 
+const chargerTechniciens = async () => {
+  const res = await db.query(
+    `SELECT id, prenom, nom, email FROM utilisateurs WHERE role = 'Technicien' AND est_actif = true`
+  );
+  return res.rows;
+};
+
+const trouverTechnicienDansListe = (technicienTexte = '', techniciens) => {
+  const emailDansTexte = technicienTexte.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
+  if (emailDansTexte) {
+    const byEmail = techniciens.find(u => u.email.toLowerCase() === emailDansTexte.toLowerCase());
+    return byEmail || { prenom: '', nom: technicienTexte, email: emailDansTexte };
+  }
+  const cible = normaliser(technicienTexte);
+  return techniciens.find(user => {
+    const nomComplet = normaliser(`${user.prenom || ''} ${user.nom || ''}`);
+    const nomInverse = normaliser(`${user.nom || ''} ${user.prenom || ''}`);
+    return cible === nomComplet
+      || cible === nomInverse
+      || cible === normaliser(user.email)
+      || (cible && nomComplet.includes(cible))
+      || (cible && cible.includes(nomComplet));
+  });
+};
+
+const purgerAnciensRappels = async () => {
+  try {
+    await db.query(
+      `DELETE FROM intervention_rappels_email WHERE date_envoi < NOW() - INTERVAL '60 days'`
+    );
+  } catch (_) {}
+};
+
 const traiterRappelsInterventions = async () => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     console.log('Rappels interventions: EMAIL_USER ou EMAIL_PASS manquant, envoi ignore.');
@@ -139,6 +171,7 @@ const traiterRappelsInterventions = async () => {
   }
 
   await initialiserTableRappels();
+  await purgerAnciensRappels();
 
   const result = await db.query(`
     SELECT id, date_intervention, type_intervention, description, technicien, statut, cout
@@ -148,6 +181,11 @@ const traiterRappelsInterventions = async () => {
       AND date_intervention::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
     ORDER BY date_intervention ASC
   `, ['Preventive']);
+
+  if (!result.rows.length) return;
+
+  // Pré-charger tous les techniciens une seule fois (évite N+1 requêtes)
+  const techniciens = await chargerTechniciens();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -159,7 +197,7 @@ const traiterRappelsInterventions = async () => {
 
     if (!RAPPEL_JOURS.includes(joursAvant)) continue;
 
-    const technicien = await trouverTechnicien(intervention.technicien);
+    const technicien = trouverTechnicienDansListe(intervention.technicien, techniciens);
     if (!technicien?.email) {
       console.log(`Rappel intervention ${intervention.id}: email technicien introuvable (${intervention.technicien}).`);
       continue;
@@ -177,8 +215,7 @@ const traiterRappelsInterventions = async () => {
   }
 };
 
-// ── Relances POST-échéance ────────────────────────────────
-const RELANCE_JOURS = [3, 7, 14]; // J+3, J+7, J+14 après la date
+const RELANCE_JOURS = [3, 7, 14]; 
 
 const envoyerRelance = async (intervention, technicien, joursApres) => {
   const details = extraireDetails(intervention.description);
@@ -218,7 +255,6 @@ const traiterRelancesPostEcheance = async () => {
 
   await initialiserTableRappels();
 
-  // Créer la colonne jours_apres si elle n'existe pas encore
   await db.query(`
     ALTER TABLE intervention_rappels_email
     ADD COLUMN IF NOT EXISTS jours_apres INTEGER
@@ -231,6 +267,11 @@ const traiterRelancesPostEcheance = async () => {
       AND date_intervention < CURRENT_DATE - INTERVAL '2 days'
   `);
 
+  if (!result.rows.length) return;
+
+  // Pré-charger tous les techniciens une seule fois (évite N+1 requêtes)
+  const techniciens = await chargerTechniciens();
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -241,10 +282,10 @@ const traiterRelancesPostEcheance = async () => {
 
     if (!RELANCE_JOURS.includes(joursApres)) continue;
 
-    const technicien = await trouverTechnicien(intervention.technicien);
+    const technicien = trouverTechnicienDansListe(intervention.technicien, techniciens);
     if (!technicien?.email) continue;
 
-    // Vérifier si la relance a déjà été envoyée (on réutilise jours_avant avec valeur négative)
+    
     const dejaEnvoye = await db.query(
       `SELECT id FROM intervention_rappels_email
        WHERE intervention_id = $1 AND jours_avant = $2 AND email_destinataire = $3`,

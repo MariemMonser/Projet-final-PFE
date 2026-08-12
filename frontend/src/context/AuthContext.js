@@ -1,7 +1,5 @@
-// ============================================================
-// CONTEXTE AUTH
-// Gere l'etat global de l'utilisateur connecte
-// ============================================================
+
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../api';
 
@@ -11,10 +9,18 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Au demarrage, charger l'utilisateur depuis localStorage
+  
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
-    if (savedUser) setUser(JSON.parse(savedUser));
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (_) {
+        // Données corrompues — on nettoie et on repart en session vierge
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+      }
+    }
     setLoading(false);
   }, []);
 

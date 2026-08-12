@@ -1,6 +1,13 @@
 import React from 'react';
 
 const QrInterventionModal = ({ qrModal, onClose, copied, onCopy }) => {
+  const telecharger = () => {
+    if (!qrModal?.qrCode) return;
+    const link = document.createElement('a');
+    link.download = `qr-${qrModal.equipement?.nom || qrModal.equipement?.id || 'intervention'}.png`;
+    link.href = qrModal.qrCode;
+    link.click();
+  };
   if (!qrModal) return null;
 
   return (
@@ -12,7 +19,7 @@ const QrInterventionModal = ({ qrModal, onClose, copied, onCopy }) => {
         className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 transform scale-100 transition-all duration-300"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
+        
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
           <div>
             <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
@@ -31,9 +38,9 @@ const QrInterventionModal = ({ qrModal, onClose, copied, onCopy }) => {
           </button>
         </div>
 
-        {/* Content */}
+        
         <div className="p-6 text-center">
-          {/* Info Badge */}
+          
           <div className="flex items-center justify-between mb-5 p-3.5 bg-slate-50 border border-slate-100 rounded-xl text-left">
             <div>
               <span className="text-[9px] font-bold tracking-wider text-slate-400 uppercase">Équipement ID</span>
@@ -45,12 +52,12 @@ const QrInterventionModal = ({ qrModal, onClose, copied, onCopy }) => {
             </div>
           </div>
 
-          {/* QR Frame */}
+          
           <div className="relative group inline-block border border-slate-200 rounded-2xl p-4 bg-white shadow-sm hover:shadow-md transition-all duration-300">
             <img src={qrModal.qrCode} alt="QR intervention" className="w-52 h-52 rounded-lg" />
           </div>
 
-          {/* Alert Auto IP */}
+          
           <div className="mt-5 p-3.5 bg-emerald-50/70 border border-emerald-100/80 rounded-xl text-left flex gap-3 items-start shadow-sm">
             <svg className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -67,7 +74,7 @@ const QrInterventionModal = ({ qrModal, onClose, copied, onCopy }) => {
             </div>
           </div>
 
-          {/* Redirection Link & Copy */}
+          
           <div className="mt-5 text-left">
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Lien de redirection mobile</label>
             <div className="relative flex items-center">
@@ -100,13 +107,22 @@ const QrInterventionModal = ({ qrModal, onClose, copied, onCopy }) => {
           </div>
         </div>
 
-        {/* Footer */}
+        
         <div className="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex justify-end gap-3">
           <button
             onClick={onClose}
             className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-white text-xs font-semibold shadow-sm transition-all"
           >
             Fermer
+          </button>
+          <button
+            onClick={telecharger}
+            className="px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-600 text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Télécharger PNG
           </button>
           <button
             onClick={() => window.print()}

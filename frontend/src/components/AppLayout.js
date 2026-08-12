@@ -1,18 +1,18 @@
-// ============================================================
-// APP LAYOUT - Sidebar + contenu principal
-// ============================================================
+
+
 import React, { useState } from 'react';
 import { NavLink, useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api';
-import NotificationBell from './NotificationBell';
 
 const MENUS = {
   Administrateur: [
-    { path: '/admin/utilisateurs', label: 'Utilisateurs',    icon: '👥' },
-    { path: '/admin/equipements',  label: 'Equipements',     icon: '⚙️'  },
-    { path: '/admin/monitoring',   label: 'Monitoring',      icon: '📊'  },
-    { path: '/admin/audit',        label: "Journal d'audit", icon: '📋' },
+    { path: '/admin/utilisateurs',          label: 'Utilisateurs',       icon: '👥' },
+    { path: '/admin/equipements',           label: 'Équipements',        icon: '⚙️'  },
+    { path: '/admin/monitoring',            label: 'Monitoring',         icon: '📊'  },
+    { path: '/admin/interventions',         label: 'Planification',      icon: '📅' },
+    { path: '/admin/interventions-terrain', label: 'Fiches terrain',     icon: '📋' },
+    { path: '/admin/audit',                 label: "Journal d'audit",    icon: '🔍' },
   ],
   Responsable: [
     { path: '/responsable/dashboard',             label: 'Tableau de bord',      icon: '📊' },
@@ -22,6 +22,7 @@ const MENUS = {
     { path: '/responsable/kpis',                  label: 'KPIs',                 icon: '📈' },
     { path: '/responsable/seuils',                label: 'Seuils et Alertes',    icon: '⚠️' },
     { path: '/responsable/prc',                   label: 'Pièces de rechange',   icon: '🔩' },
+    { path: '/responsable/maintenance-predictive', label: 'Maintenance prédictive', icon: '🤖' },
   ],
   Technicien: [
     { path: '/technicien/dashboard',      label: 'Mon tableau de bord', icon: '📊' },
@@ -30,16 +31,12 @@ const MENUS = {
     { path: '/technicien/interventions',  label: 'Mes interventions',   icon: '🔧' },
     { path: '/technicien/verifications',  label: 'Verifications',       icon: '✅' },
   ],
-  Lecteur: [
-    { path: '/lecteur/dashboard', label: 'Tableau de bord', icon: '📊' },
-  ],
 };
 
 const ROLE_COLORS = {
   Administrateur: 'bg-red-100 text-red-800',
   Responsable:    'bg-blue-100 text-blue-800',
   Technicien:     'bg-green-100 text-green-800',
-  Lecteur:        'bg-gray-100 text-gray-700',
 };
 
 const AppLayout = () => {
@@ -48,7 +45,7 @@ const AppLayout = () => {
   const location          = useLocation();
   const menuItems         = MENUS[user?.role] || [];
 
-  // Titre de la page courante à partir du menu
+  
   const currentPage = menuItems.find(m => location.pathname.startsWith(m.path));
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -93,16 +90,16 @@ const AppLayout = () => {
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
 
-      {/* Sidebar */}
+      
       <aside className="w-64 bg-blue-950 text-white flex flex-col flex-shrink-0">
 
-        {/* Logo */}
+        
         <div className="px-6 py-5 border-b border-blue-900">
           <h1 className="text-xl font-bold tracking-wide">ELEONETECH</h1>
           <p className="text-blue-300 text-xs mt-0.5">Maintenance Batiment & Infrastructure</p>
         </div>
 
-        {/* Navigation */}
+        
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {menuItems.map((item) => (
             <NavLink key={item.path} to={item.path}
@@ -119,7 +116,7 @@ const AppLayout = () => {
           ))}
         </nav>
 
-        {/* Infos utilisateur + deconnexion */}
+        
         <div className="border-t border-blue-900 p-4">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-full bg-blue-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
@@ -143,10 +140,10 @@ const AppLayout = () => {
         </div>
       </aside>
 
-      {/* Contenu principal */}
+      
       <main className="flex-1 overflow-y-auto relative flex flex-col">
 
-        {/* Barre header */}
+        
         <header className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-40">
           <div className="flex items-center gap-2 text-gray-700">
             {currentPage && (
@@ -157,19 +154,18 @@ const AppLayout = () => {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <NotificationBell />
             <div className="text-sm text-gray-500 border-l pl-3">
               <span className="font-medium text-gray-700">{user?.prenom} {user?.nom}</span>
             </div>
           </div>
         </header>
 
-        {/* Page content */}
+        
         <div className="flex-1">
           <Outlet />
         </div>
 
-        {/* Modal Modification Mot de Passe */}
+        
         {showPasswordModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-md">

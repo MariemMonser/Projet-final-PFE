@@ -39,27 +39,37 @@ MTBF/MTTR calculés :
 Usage : python load_dw.py
 """
 
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+import os
 import numpy as np
 import pandas as pd
 import warnings
+from pathlib import Path
 from datetime import datetime
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
 
 warnings.filterwarnings("ignore")
 
+_env_path = Path(__file__).parent.parent / "backend" / ".env"
+load_dotenv(dotenv_path=_env_path)
+
 # ── Config ────────────────────────────────────────────────────────────────────
-DB_HOST     = "localhost"
-DB_PORT     = 5432
-DB_USER     = "postgres"
-DB_PASSWORD = ""
-DB_STAGING  = "eleonetech_staging"
-DB_DW       = "eleonetech_dw"
+DB_HOST     = os.getenv("DB_HOST",         "localhost")
+DB_PORT     = int(os.getenv("DB_PORT",     "5432"))
+DB_USER     = os.getenv("DB_USER",         "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD",     "")
+DB_STAGING  = os.getenv("DB_STAGING_NAME", "eleonetech_staging")
+DB_DW       = os.getenv("DB_DW_NAME",      "eleonetech_dw")
 DB_APP      = "eleonetech_db"   # base principale de l'application web
 
 
 def get_engine(db):
     if DB_PASSWORD:
-        url = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{db}"
+        url = f"postgresql+psycopg2://{DB_USER}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{db}"
     else:
         url = f"postgresql+psycopg2://{DB_USER}@{DB_HOST}:{DB_PORT}/{db}"
     return create_engine(url)
@@ -143,7 +153,7 @@ CREATE TABLE dim_zone (
 
 CREATE TABLE dim_equipement (
     equip_id        SERIAL       PRIMARY KEY,
-    code_equipement VARCHAR(30)  NOT NULL UNIQUE,
+    code_equipement VARCHAR(100) NOT NULL UNIQUE,
     libelle         TEXT,
     zone_id         INT          REFERENCES dim_zone(zone_id),
     nb_arrets_total INTEGER      DEFAULT 0,
@@ -187,11 +197,11 @@ CREATE TABLE dim_employe (
 
 CREATE TABLE dim_intervention (
     id_inter          SERIAL       PRIMARY KEY,
-    numero_ot         VARCHAR(30)  UNIQUE,
+    numero_ot         VARCHAR(50)  UNIQUE,
     type_intervention VARCHAR(10),
-    matricule_tech    VARCHAR(20),
+    matricule_tech    VARCHAR(30),
     nom_technicien    TEXT,
-    code_equipement   VARCHAR(30),
+    code_equipement   VARCHAR(100),
     date_debut        TIMESTAMP,
     duree_h           NUMERIC(10,3)
 );
@@ -660,11 +670,10 @@ def load_dim_equipement(engine_stg, engine_dw, engine_app=None):
 
 def load_dim_prc(engine_stg, engine_dw, engine_app=None):
     df = stg(engine_stg, """
-        SELECT code_prc_format AS code_prc, designation,
-               equipement AS famille_equipement,
-               COALESCE(NULLIF(cout_tnd,'')::NUMERIC,0) AS cout_unitaire_tnd
-        FROM stg_pieces_rechange_catalogue
-        WHERE code_prc_format IS NOT NULL
+        SELECT code_prc, designation, famille_equipement,
+               COALESCE(cout_unitaire_tnd, 0) AS cout_unitaire_tnd
+        FROM stg_clean_prc_catalogue
+        WHERE code_prc IS NOT NULL
     """)
     dw_write(df, "dim_prc", engine_dw)
 
@@ -785,9 +794,9 @@ def load_dim_temps(engine_stg, engine_dw, engine_app=None):
     else:
         app_energy_sources = []
     for src_table, date_col in [
-        ("stg_energie_electricite",    "date_releve"),
-        ("stg_energie_eau",            "date_releve"),
-        ("stg_energie_photovoltaique", "date"),
+        ("stg_energie_electricite", "date_releve"),
+        ("stg_energie_eau",         "date_releve"),
+        ("stg_energie_pv",          "date"),
     ]:
         try:
             df_d = stg(engine_stg,
@@ -881,9 +890,9 @@ def load_dim_energie(engine_stg, engine_dw, engine_app=None):
     # ── dim_electricite — staging (données historiques PDF) ───────────────────
     df_e = stg(engine_stg, """
         SELECT date_releve::TEXT AS date_releve,
-               SUM(phase1_kwh) AS phase1_kwh,
-               SUM(phase2_kwh) AS phase2_kwh,
-               SUM(phase3_kwh) AS phase3_kwh
+               SUM(index_ph1_kwh) AS phase1_kwh,
+               SUM(index_ph2_kwh) AS phase2_kwh,
+               SUM(index_ph3_kwh) AS phase3_kwh
         FROM stg_energie_electricite
         WHERE date_releve IS NOT NULL
         GROUP BY date_releve ORDER BY date_releve
@@ -917,11 +926,11 @@ def load_dim_energie(engine_stg, engine_dw, engine_app=None):
     # ── dim_pv — staging ──────────────────────────────────────────────────────
     df_p = stg(engine_stg, """
         SELECT date::TEXT AS date_jour,
-               NULLIF(puissance_installee_kwp,'')::NUMERIC  AS puissance_installee_kwp,
-               NULLIF(production_cumulee_kwh,'')::NUMERIC   AS production_cumulee_kwh
-        FROM stg_energie_photovoltaique
+               puissance_installee_kwp,
+               production_cumulee_kwh
+        FROM stg_energie_pv
         WHERE date IS NOT NULL
-          AND NULLIF(production_journaliere_kwh,'')::NUMERIC > 0
+          AND production_journaliere_kwh > 0
         ORDER BY date
     """)
     if not df_p.empty:
@@ -981,23 +990,26 @@ def load_dim_energie(engine_stg, engine_dw, engine_app=None):
                                 "jour","semaine","jour_semaine"]], "dim_eau", engine_dw)
 
 def load_fact_ot_global(engine_stg, engine_dw, engine_app=None):
+    # Calculer les KPIs OT directement depuis stg_clean_charges (stg_ratio_intervention supprimé)
     df_ot = stg(engine_stg, """
-        SELECT r.annee::SMALLINT AS annee, r.mois_num::SMALLINT AS mois_num,
-               ROUND(r.nb_ot_total::NUMERIC)::INTEGER  AS nb_ot_total,
-               ROUND(r.nb_curatif::NUMERIC)::INTEGER   AS nb_ot_curatif,
-               ROUND(r.nb_preventif::NUMERIC)::INTEGER AS nb_ot_preventif,
-               r.ratio_preventif_pct::NUMERIC          AS ratio_preventif_pct
-        FROM stg_ratio_intervention r
-        WHERE r.nb_ot_total IS NOT NULL AND r.nb_ot_total != ''
+        SELECT annee::SMALLINT AS annee, mois_num::SMALLINT AS mois_num,
+               COUNT(DISTINCT numero_ot)::INTEGER AS nb_ot_total,
+               COUNT(DISTINCT CASE WHEN type_intervention='CURA' THEN numero_ot END)::INTEGER AS nb_ot_curatif,
+               COUNT(DISTINCT CASE WHEN type_intervention='PREV' THEN numero_ot END)::INTEGER AS nb_ot_preventif,
+               ROUND(
+                   COUNT(DISTINCT CASE WHEN type_intervention='PREV' THEN numero_ot END)::NUMERIC
+                   / NULLIF(COUNT(DISTINCT numero_ot),0) * 100, 2
+               ) AS ratio_preventif_pct
+        FROM stg_clean_charges
+        WHERE annee IS NOT NULL AND mois_num IS NOT NULL
+        GROUP BY annee, mois_num
     """)
     df_sit = stg(engine_stg, f"""
         SELECT s.annee::SMALLINT AS annee,
                {MOIS_SQL.format(col='s.mois')} AS mois_num,
-               SUM(COALESCE(ROUND(NULLIF(s.ot_lance_prev,'')::NUMERIC)::INT,0) +
-                   COALESCE(ROUND(NULLIF(s.ot_lance_cura,'')::NUMERIC)::INT,0)) AS lances,
-               SUM(COALESCE(ROUND(NULLIF(s.ot_honore_prev,'')::NUMERIC)::INT,0) +
-                   COALESCE(ROUND(NULLIF(s.ot_honore_cura,'')::NUMERIC)::INT,0)) AS honores
-        FROM stg_situation_mensuelle s WHERE UPPER(s.entite)='SG'
+               SUM(COALESCE(s.ot_lance_prev,0) + COALESCE(s.ot_lance_cura,0)) AS lances,
+               SUM(COALESCE(s.ot_honore_prev,0) + COALESCE(s.ot_honore_cura,0)) AS honores
+        FROM stg_clean_situation s WHERE UPPER(s.entite)='SG'
         GROUP BY s.annee, s.mois
     """)
     if df_ot.empty:
@@ -1485,11 +1497,11 @@ def load_fact_energie(engine_stg, engine_dw, engine_app=None):
     # ── fact_energie_pv — staging (données historiques) ──────────────────────
     df_p = stg(engine_stg, """
         SELECT date::TEXT AS date_jour,
-               NULLIF(production_journaliere_kwh,'')::NUMERIC AS production_kwh,
-               NULLIF(heures_equivalentes_h,'')::NUMERIC      AS heures_equiv_h
-        FROM stg_energie_photovoltaique
+               production_journaliere_kwh AS production_kwh,
+               heures_equivalentes_h      AS heures_equiv_h
+        FROM stg_energie_pv
         WHERE date IS NOT NULL
-          AND NULLIF(production_journaliere_kwh,'')::NUMERIC > 0
+          AND production_journaliere_kwh > 0
         ORDER BY date
     """)
     if not df_p.empty:

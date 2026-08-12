@@ -1,6 +1,5 @@
-// ============================================================
-// DASHBOARD TECHNICIEN — Interventions, tâches, relevés
-// ============================================================
+
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -35,7 +34,7 @@ const DashboardPage = () => {
 
   return (
     <div className="p-6 space-y-6">
-      {/* En-tête */}
+      
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
@@ -59,7 +58,7 @@ const DashboardPage = () => {
         </button>
       </div>
 
-      {/* KPI interventions mois */}
+      
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Mes OT ce mois',  value: ot.total,     color: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-400'   },
@@ -83,7 +82,7 @@ const DashboardPage = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Tâches préventives cette semaine */}
+        
         <div className="bg-white rounded-xl shadow p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-800">📅 Tâches préventives — cette semaine</h2>
@@ -137,7 +136,7 @@ const DashboardPage = () => {
           )}
         </div>
 
-        {/* Relevés énergie récents */}
+        
         <div className="bg-white rounded-xl shadow p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-800">⚡ Relevés énergie — 7 derniers jours</h2>
@@ -161,7 +160,7 @@ const DashboardPage = () => {
             </div>
           ) : (
             <div className="space-y-2">
-              {/* Eau */}
+              
               {eaux.slice(0, 3).map((r, i) => (
                 <div key={`eau-${i}`} className="flex items-center justify-between p-2.5 bg-blue-50 rounded-lg">
                   <div className="flex items-center gap-2">
@@ -174,7 +173,7 @@ const DashboardPage = () => {
                   <span className="text-sm font-bold text-blue-700">{r.compteur} m³</span>
                 </div>
               ))}
-              {/* Électricité */}
+              
               {elecs.slice(0, 3).map((r, i) => (
                 <div key={`elec-${i}`} className="flex items-center justify-between p-2.5 bg-yellow-50 rounded-lg">
                   <div className="flex items-center gap-2">
@@ -194,7 +193,7 @@ const DashboardPage = () => {
         </div>
       </div>
 
-      {/* Raccourcis rapides */}
+      
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
           { label: 'Mes interventions', icon: '🔧', path: '/technicien/interventions' },

@@ -1,16 +1,13 @@
-// ============================================================
-// PAGE LOGIN
-// ============================================================
+
+
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
-// Redirection selon le role apres connexion
 const DASHBOARDS = {
   Administrateur: '/admin/utilisateurs',
   Responsable:    '/responsable/dashboard',
   Technicien:     '/technicien/dashboard',
-  Lecteur:        '/lecteur/dashboard',
 };
 
 const LoginPage = () => {
@@ -43,7 +40,7 @@ const LoginPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-950 to-blue-700 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
 
-        {/* Header */}
+        
         <div className="bg-blue-900 px-8 py-7 text-center">
           <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg">
             <span className="text-blue-900 text-3xl font-black">E</span>
@@ -52,7 +49,7 @@ const LoginPage = () => {
           <p className="text-blue-200 text-sm mt-1">Gestion de Maintenance</p>
         </div>
 
-        {/* Formulaire */}
+        
         <div className="px-8 py-8">
           <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">Connexion</h2>
 
@@ -108,7 +105,7 @@ const LoginPage = () => {
           </form>
 
           <p className="text-xs text-gray-400 text-center mt-6">
-            Administrateur · Responsable · Technicien · Lecteur
+            Administrateur · Responsable · Technicien
           </p>
         </div>
       </div>

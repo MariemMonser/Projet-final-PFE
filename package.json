@@ -5,6 +5,25 @@
     "express": "^5.2.1",
     "expresse": "^1.0.2",
     "mysql2": "^3.20.0",
-    "nodemailer": "^8.0.5"
-  }
+    "nodemailer": "^8.0.5",
+    "pdfjs-dist": "^6.0.227"
+  },
+  "name": "pfeee-main",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Montassar09/pfeee-main.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Montassar09/pfeee-main/issues"
+  },
+  "homepage": "https://github.com/Montassar09/pfeee-main#readme"
 }

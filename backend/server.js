@@ -1,21 +1,22 @@
-// ============================================================
-// SERVEUR PRINCIPAL - ELEONETECH
-// Node.js + Express + PostgreSQL
-// ============================================================
+
+
 require('dotenv').config({ path: __dirname + '/.env' });
 
+const http    = require('http');
 const express = require('express');
 const cors    = require('cors');
 const db      = require('./config/db');
 
-// Verify env loaded
 console.log('EMAIL_USER loaded:', process.env.EMAIL_USER ? '✅' : '❌ MISSING');
 console.log('EMAIL_PASS loaded:', process.env.EMAIL_PASS ? '✅' : '❌ MISSING');
 
-// Fallback JWT_SECRET if .env is not loaded
-if (!process.env.JWT_SECRET) {
-  process.env.JWT_SECRET = 'eleonetech_jwt_secret_key_2026';
-  console.log('⚠️  JWT_SECRET set to fallback value');
+// Validation complète au démarrage — plante tôt plutôt que crasher à la première requête
+const REQUIRED_ENV = ['JWT_SECRET', 'DB_HOST', 'DB_PASSWORD', 'DB_NAME'];
+const missingEnv   = REQUIRED_ENV.filter(k => !process.env[k]);
+if (missingEnv.length) {
+  console.error(`❌ Variables d'environnement manquantes : ${missingEnv.join(', ')}`);
+  console.error('   → Vérifiez votre fichier backend/.env');
+  process.exit(1);
 }
 
 const authRoutes           = require('./routes/auth.routes');
@@ -27,21 +28,45 @@ const seuilsRoutes           = require('./routes/seuils.routes');
 const verificationsRoutes    = require('./routes/verifications.routes');
 const kpiRoutes              = require('./routes/kpi.routes');
 const prcRoutes              = require('./routes/prc.routes');
+const mlRoutes                         = require('./routes/ml.routes');
 const { demarrerRappelsInterventions } = require('./services/interventionReminder.service');
+const { demarrerDwSync }               = require('./services/dwSync.service');
+const { purgerBlacklist }              = require('./middleware/auth.middleware');
 
-const app  = express();
-const PORT = process.env.PORT || 5000;
+const app        = express();
+const httpServer = http.createServer(app);
+const PORT       = process.env.PORT || 5000;
 
-// ── Middlewares ───────────────────────────────────────────
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:3000'];
+
+// Autorise les IPs du réseau local (téléphones/tablettes sur le même WiFi)
+const isLocalNetwork = (origin) => {
+  try {
+    const host = new URL(origin).hostname;
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      /^192\.168\.\d+\.\d+$/.test(host) ||
+      /^10\.\d+\.\d+\.\d+$/.test(host)   ||
+      /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host)
+    );
+  } catch { return false; }
+};
+
 app.use(cors({
-  origin: '*',
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin) || isLocalNetwork(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin non autorisée ${origin}`));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'cf-connecting-ip'],
+  credentials: true,
 }));
 
 app.use(express.json());
 
-// ── Routes API ────────────────────────────────────────────
 app.use('/api/auth',         authRoutes);
 app.use('/api/users',        usersRoutes);
 app.use('/api/equipements',  equipementRoutes);
@@ -51,27 +76,30 @@ app.use('/api/seuils',         seuilsRoutes);
 app.use('/api/verifications',  verificationsRoutes);
 app.use('/api/kpi',            kpiRoutes);
 app.use('/api/prc',            prcRoutes);
+app.use('/api/ml',             mlRoutes);
 
-// ── Health check ──────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', app: 'ELEONETECH API', time: new Date().toISOString() });
 });
 
-// ── 404 ───────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ message: 'Route non trouvee.' });
 });
 
-// ── Demarrage ─────────────────────────────────────────────
-app.listen(PORT, async () => {
+httpServer.listen(PORT, async () => {
   console.log(`🚀 Serveur demarre sur http://localhost:${PORT}`);
   demarrerRappelsInterventions();
+  demarrerDwSync();
+
+  // Nettoyage initial puis toutes les 6h des tokens blacklistés expirés
+  purgerBlacklist();
+  setInterval(purgerBlacklist, 6 * 60 * 60 * 1000);
 
   try {
     await db.query('SELECT 1');
     console.log('✅ PostgreSQL connecte - Base: eleonetech_db');
 
-    // Creer la table interventions si elle n'existe pas
+    
     await db.query(`
       CREATE TABLE IF NOT EXISTS interventions (
         id SERIAL PRIMARY KEY,
@@ -85,7 +113,7 @@ app.listen(PORT, async () => {
     `);
     console.log('✅ Table interventions prete');
 
-    // Creer la table staging si elle n'existe pas
+    
     await db.query(`
       CREATE TABLE IF NOT EXISTS interventions_staging (
         id SERIAL PRIMARY KEY,
@@ -130,9 +158,59 @@ app.listen(PORT, async () => {
         UNIQUE(equipement_id, technicien, date_verification)
       )
     `);
-    console.log('✅ Table verifications_quotidiennes prete');
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS verifications_sous_equip (
+        id SERIAL PRIMARY KEY,
+        sous_equip_id INTEGER NOT NULL,
+        sous_equip_nom VARCHAR(200) NOT NULL,
+        equipement_id INTEGER,
+        equipement_nom VARCHAR(200),
+        technicien VARCHAR(100) NOT NULL,
+        date_verification DATE NOT NULL DEFAULT CURRENT_DATE,
+        statut VARCHAR(20) NOT NULL DEFAULT 'ok',
+        observation TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(sous_equip_id, technicien, date_verification)
+      )
+    `);
+    console.log('✅ Table verifications_quotidiennes + verifications_sous_equip pretes');
 
-    // Check if required tables exist
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS mouvements_prc (
+        id SERIAL PRIMARY KEY,
+        prc_id INTEGER REFERENCES prc(id) ON DELETE CASCADE,
+        type_mouvement VARCHAR(10) NOT NULL,
+        quantite INTEGER NOT NULL,
+        stock_avant INTEGER NOT NULL,
+        stock_apres INTEGER NOT NULL,
+        intervention_staging_id INTEGER,
+        technicien VARCHAR(100),
+        motif VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('✅ Table mouvements_prc prete');
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS seuils_consommation (
+        id SERIAL PRIMARY KEY,
+        type_consommation VARCHAR(50) NOT NULL UNIQUE,
+        seuil_hiver DECIMAL(10,2) NOT NULL,
+        seuil_ete DECIMAL(10,2) NOT NULL,
+        prix_unitaire DECIMAL(10,2) NOT NULL,
+        unite VARCHAR(20) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.query(`
+      INSERT INTO seuils_consommation (type_consommation, seuil_hiver, seuil_ete, prix_unitaire, unite)
+      VALUES ('eau', 9000, 12000, 0.200, 'm³'), ('electricite', 2300, 4000, 0.700, 'kWh')
+      ON CONFLICT (type_consommation) DO NOTHING
+    `);
+    console.log('✅ Table seuils_consommation prete');
+
+    
     const requiredTables = ['consommation_eau', 'consommation_electricite', 'production_photovoltaique', 'interventions', 'interventions_staging', 'sous_equip'];
     console.log('👤 Verification des tables requises...');
 

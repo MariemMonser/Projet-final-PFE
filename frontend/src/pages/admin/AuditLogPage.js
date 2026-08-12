@@ -1,6 +1,5 @@
-// ============================================================
-// PAGE JOURNAL D'AUDIT (Administrateur)
-// ============================================================
+
+
 import React, { useState, useEffect } from 'react';
 import { usersAPI } from '../../api';
 import { exportToPDF } from '../../utils/exportPDF';
@@ -45,7 +44,7 @@ const AuditLogPage = () => {
   return (
     <div className="p-6" id="audit-log-page">
 
-      {/* En-tete */}
+      
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Journal d'Audit</h1>

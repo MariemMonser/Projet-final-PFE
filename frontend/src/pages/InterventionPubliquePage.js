@@ -1,11 +1,7 @@
-// ============================================================
-// INTERVENTION PUBLIQUE PAGE
-// Etape 1 : authentification technicien (email + mdp)
-// Etape 2 : formulaire Ouverture/Cloture avec liste techniciens
-// ============================================================
+
+
 import React, { useState, useEffect } from 'react';
 
-// Utilise toujours le même host que le frontend, port 5000 pour le backend
 const BASE_URL = `http://${window.location.hostname}:5000`;
 
 const api = (path, body) =>
@@ -16,14 +12,14 @@ const api = (path, body) =>
   });
 
 const InterventionPubliquePage = () => {
-  // ── Etape 1 : login ───────────────────────────────────────
-  const [etape, setEtape]         = useState('login');   // 'login' | 'form' | 'succes'
-  const [userInfo, setUserInfo]   = useState(null);      // { prenom, nom, role }
+  
+  const [etape, setEtape]         = useState('login');   
+  const [userInfo, setUserInfo]   = useState(null);      
   const [loginForm, setLoginForm] = useState({ email: '', mot_de_passe: '' });
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginErreur, setLoginErreur]   = useState('');
 
-  // ── Etape 2 : formulaire ──────────────────────────────────
+  
   const [personnel, setPersonnel] = useState([]);
   const [action, setAction]       = useState('Ouverture');
   const [form, setForm]           = useState({
@@ -37,7 +33,7 @@ const InterventionPubliquePage = () => {
   const today = new Date().toISOString().split('T')[0];
   const heure = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
-  // Charger liste personnel quand on passe au formulaire
+  
   useEffect(() => {
     if (etape !== 'form') return;
     fetch(`${BASE_URL}/api/monitoring/personnel/public`)
@@ -46,7 +42,7 @@ const InterventionPubliquePage = () => {
       .catch(() => {});
   }, [etape]);
 
-  // ── Login ─────────────────────────────────────────────────
+  
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!loginForm.email.trim() || !loginForm.mot_de_passe) {
@@ -70,7 +66,7 @@ const InterventionPubliquePage = () => {
     }
   };
 
-  // ── Soumission fiche ──────────────────────────────────────
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.description.trim()) return setErreur('Veuillez saisir une description.');
@@ -106,7 +102,7 @@ const InterventionPubliquePage = () => {
     setErreur('');
   };
 
-  // ── Rendu : succès ────────────────────────────────────────
+  
   if (etape === 'succes') {
     return (
       <div style={s.page}>
@@ -123,7 +119,7 @@ const InterventionPubliquePage = () => {
     );
   }
 
-  // ── Rendu : login ─────────────────────────────────────────
+  
   if (etape === 'login') {
     return (
       <div style={s.page}>
@@ -168,11 +164,11 @@ const InterventionPubliquePage = () => {
     );
   }
 
-  // ── Rendu : formulaire ────────────────────────────────────
+  
   return (
     <div style={s.page}>
       <form onSubmit={handleSubmit} style={s.card}>
-        {/* En-tête */}
+        
         <div style={s.headerRow}>
           <div>
             <p style={s.kicker}>ELEONETECH</p>
@@ -184,7 +180,7 @@ const InterventionPubliquePage = () => {
           </button>
         </div>
 
-        {/* Badge technicien connecte */}
+        
         <div style={s.userBadge}>
           <div style={s.userAvatar}>
             {userInfo.prenom[0]}{userInfo.nom[0]}
@@ -197,7 +193,7 @@ const InterventionPubliquePage = () => {
 
         {erreur && <div style={s.errorBox}>{erreur}</div>}
 
-        {/* Ouverture / Cloture */}
+        
         <label style={s.label}>Type d'action *</label>
         <div style={s.segmented}>
           {['Ouverture', 'Cloture'].map(a => (
@@ -240,7 +236,7 @@ const InterventionPubliquePage = () => {
           ))}
         </div>
 
-        {/* Description */}
+        
         <label style={s.label}>Description *</label>
         <textarea
           value={form.description}

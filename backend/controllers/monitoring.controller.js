@@ -1,19 +1,19 @@
-// ============================================================
-// MONITORING CONTROLLER
-// Water, Electricity, Photovoltaic, and Interventions monitoring
-// ============================================================
-const db     = require('../config/db');
-const QRCode = require('qrcode');
-const bcrypt = require('bcryptjs');
-const os     = require('os');
+
+
+const db         = require('../config/db');
+const QRCode     = require('qrcode');
+const bcrypt     = require('bcryptjs');
+const os         = require('os');
+const nodemailer = require('nodemailer');
+const { verifierEtCreerAlertes } = require('./seuils.controller');
 
 const getLocalIp = () => {
   const interfaces = os.networkInterfaces();
 
-  // Mots-clés des adaptateurs virtuels à ignorer (VirtualBox, VMware, etc.)
+  
   const virtualKeywords = ['virtualbox', 'vmware', 'vethernet', 'loopback', 'pseudo', 'virtual', 'vbox'];
 
-  // 1er passage : chercher Wi-Fi ou Ethernet réel en priorité
+  
   for (const name of Object.keys(interfaces)) {
     const lowerName = name.toLowerCase();
     const isVirtual = virtualKeywords.some(k => lowerName.includes(k));
@@ -21,14 +21,14 @@ const getLocalIp = () => {
 
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        // Exclure aussi les plages VirtualBox (192.168.56.x) et VMware (192.168.VMnet)
+        
         if (iface.address.startsWith('192.168.56.')) continue;
         return iface.address;
       }
     }
   }
 
-  // 2e passage : fallback — n'importe quelle IPv4 non-interne hors 192.168.56.x
+  
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('192.168.56.')) {
@@ -40,7 +40,6 @@ const getLocalIp = () => {
   return 'localhost';
 };
 
-// ── Helper : enregistrer dans audit_log ──────────────────
 const logAction = async (idUser, action, tableCible = null, ip = null) => {
   try {
     await db.query(
@@ -52,7 +51,6 @@ const logAction = async (idUser, action, tableCible = null, ip = null) => {
   }
 };
 
-// ── Water Consumption ─────────────────────────────────────
 const getWaterConsumption = async (req, res) => {
   try {
     const { debut, fin } = req.query;
@@ -91,7 +89,7 @@ const getWaterConsumptionStats = async (req, res) => {
       FROM consommation_eau
     `);
     const result = stats.rows[0];
-    // Convert string values to numbers
+    
     res.json({
       total_readings: parseInt(result.total_readings),
       first_reading: result.first_reading,
@@ -104,7 +102,6 @@ const getWaterConsumptionStats = async (req, res) => {
   }
 };
 
-// ── Electricity Consumption ───────────────────────────────
 const getElectricityConsumption = async (req, res) => {
   try {
     const { debut, fin } = req.query;
@@ -151,7 +148,6 @@ const getElectricityConsumptionStats = async (req, res) => {
   }
 };
 
-// ── Photovoltaic Production ───────────────────────────────
 const getPhotovoltaicProduction = async (req, res) => {
   try {
     const data = await db.query(`
@@ -211,20 +207,24 @@ const getPhotovoltaicProductionStats = async (req, res) => {
   }
 };
 
-// ── Interventions ─────────────────────────────────────────
 const getInterventions = async (req, res) => {
   try {
+    const page   = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit  = Math.min(200, Math.max(1, parseInt(req.query.limit) || 100));
+    const offset = (page - 1) * limit;
+
     const data = await db.query(`
-      SELECT id, date_intervention, type_intervention, description, 
-      technicien, statut, cout
-      FROM interventions 
+      SELECT id, date_intervention, type_intervention, description,
+             technicien, statut, cout
+      FROM interventions
       ORDER BY date_intervention DESC
-    `);
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
     res.json(data.rows);
   } catch (err) {
     console.error('Erreur getInterventions:', err);
     
-    // Check if table doesn't exist
+    
     if (err.message.includes('does not exist') || err.message.includes('relation') || err.code === '42P01') {
       console.log('interventions table does not exist');
       return res.json([]);
@@ -255,7 +255,6 @@ const getInterventionsStats = async (req, res) => {
   }
 };
 
-// ── CRUD Operations for Water Consumption ─────────────────────
 const addWaterConsumption = async (req, res) => {
   try {
     const { date_releve, compteur } = req.body;
@@ -265,8 +264,11 @@ const addWaterConsumption = async (req, res) => {
     }
 
     const compteurVal = parseFloat(compteur);
+    if (!isFinite(compteurVal) || compteurVal < 0) {
+      return res.status(400).json({ message: 'La valeur du compteur doit être un nombre positif.' });
+    }
 
-    // Calcul consommation_jour = compteur actuel - dernier compteur
+    
     const prevRes = await db.query(
       'SELECT compteur FROM consommation_eau WHERE date_releve < $1 ORDER BY date_releve DESC LIMIT 1',
       [date_releve]
@@ -274,7 +276,7 @@ const addWaterConsumption = async (req, res) => {
     const prevCompteur = prevRes.rows.length > 0 ? parseFloat(prevRes.rows[0].compteur) : compteurVal;
     const consommation_jour = parseFloat(Math.max(0, compteurVal - prevCompteur).toFixed(3));
 
-    // Prix unitaire depuis seuils_consommation
+    
     const seuilRes = await db.query(
       'SELECT prix_unitaire FROM seuils_consommation WHERE type_consommation = $1', ['eau']
     ).catch(() => ({ rows: [] }));
@@ -286,7 +288,12 @@ const addWaterConsumption = async (req, res) => {
       [date_releve, compteurVal, consommation_jour, cout_total]
     );
 
+    if (req.user) logAction(req.user.id, 'CREATE_EAU', 'consommation_eau', req.ip);
     res.status(201).json(result.rows[0]);
+
+    // Vérification alertes en arrière-plan (ne bloque pas la réponse)
+    verifierEtCreerAlertes(req.user?.id || null, req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : 'Système')
+      .catch(err => console.error('[Alertes] Erreur auto après ajout eau:', err.message));
   } catch (err) {
     console.error('Erreur addWaterConsumption:', err);
     res.status(500).json({ message: 'Erreur serveur.' });
@@ -297,16 +304,39 @@ const updateWaterConsumption = async (req, res) => {
   try {
     const { id } = req.params;
     const { date_releve, compteur } = req.body;
-    
-    const result = await db.query(
-      'UPDATE consommation_eau SET date_releve = $1, compteur = $2 WHERE id = $3 RETURNING *',
-      [date_releve, parseFloat(compteur), id]
+
+    if (!date_releve || compteur === undefined || compteur === null) {
+      return res.status(400).json({ message: 'Date et compteur sont requis.' });
+    }
+    const compteurVal = parseFloat(compteur);
+    if (!isFinite(compteurVal) || compteurVal < 0) {
+      return res.status(400).json({ message: 'La valeur du compteur doit être un nombre positif.' });
+    }
+
+    // Recalculer consommation_jour à partir du relevé précédent (hors ligne courante)
+    const prevRes = await db.query(
+      'SELECT compteur FROM consommation_eau WHERE date_releve < $1 AND id != $2 ORDER BY date_releve DESC LIMIT 1',
+      [date_releve, id]
     );
-    
+    const prevCompteur = prevRes.rows.length > 0 ? parseFloat(prevRes.rows[0].compteur) : compteurVal;
+    const consommation_jour = parseFloat(Math.max(0, compteurVal - prevCompteur).toFixed(3));
+
+    const seuilRes = await db.query(
+      'SELECT prix_unitaire FROM seuils_consommation WHERE type_consommation = $1', ['eau']
+    ).catch(() => ({ rows: [] }));
+    const prix = seuilRes.rows.length > 0 ? parseFloat(seuilRes.rows[0].prix_unitaire) : 0.200;
+    const cout_total = parseFloat((consommation_jour * prix).toFixed(3));
+
+    const result = await db.query(
+      'UPDATE consommation_eau SET date_releve = $1, compteur = $2, consommation_jour = $3, cout_total = $4 WHERE id = $5 RETURNING *',
+      [date_releve, compteurVal, consommation_jour, cout_total, id]
+    );
+
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Enregistrement non trouvé.' });
     }
-    
+
+    logAction(req.user.id, 'UPDATE_EAU', 'consommation_eau', req.ip);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Erreur updateWaterConsumption:', err);
@@ -331,7 +361,6 @@ const deleteWaterConsumption = async (req, res) => {
   }
 };
 
-// ── Recalculer consommation_jour et cout_total pour les relevés eau ──
 const recalculerEau = async (req, res) => {
   try {
     const seuilRes = await db.query(
@@ -362,7 +391,34 @@ const recalculerEau = async (req, res) => {
   }
 };
 
-// ── CRUD Operations for Electricity Consumption ───────────────────
+const recalculerElec = async (req, res) => {
+  try {
+    const seuilRes = await db.query(
+      'SELECT prix_unitaire FROM seuils_consommation WHERE type_consommation = $1', ['electricite']
+    ).catch(() => ({ rows: [] }));
+    const prix = seuilRes.rows.length > 0 ? parseFloat(seuilRes.rows[0].prix_unitaire) : 0.700;
+
+    const rows = await db.query(
+      'SELECT id, phase1, phase2, phase3 FROM consommation_electricite ORDER BY date_releve ASC'
+    );
+
+    let updated = 0;
+    for (const row of rows.rows) {
+      const conso = parseFloat(row.phase1 || 0) + parseFloat(row.phase2 || 0) + parseFloat(row.phase3 || 0);
+      const cout  = parseFloat((conso * prix).toFixed(3));
+      await db.query(
+        'UPDATE consommation_electricite SET consommation_jour = $1, cout_total = $2 WHERE id = $3',
+        [parseFloat(conso.toFixed(3)), cout, row.id]
+      );
+      updated++;
+    }
+    res.json({ message: `${updated} relevés électricité recalculés.` });
+  } catch (err) {
+    console.error('Erreur recalculerElec:', err);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};
+
 const addElectricityConsumption = async (req, res) => {
   try {
     const { date_releve, phase1, phase2, phase3 } = req.body;
@@ -372,9 +428,11 @@ const addElectricityConsumption = async (req, res) => {
     }
 
     const p1 = parseFloat(phase1), p2 = parseFloat(phase2), p3 = parseFloat(phase3);
+    if (!isFinite(p1) || !isFinite(p2) || !isFinite(p3) || p1 < 0 || p2 < 0 || p3 < 0) {
+      return res.status(400).json({ message: 'Les valeurs des phases doivent être des nombres positifs.' });
+    }
     const consommation_jour = parseFloat((p1 + p2 + p3).toFixed(3));
 
-    // Prix unitaire depuis seuils_consommation
     const seuilRes = await db.query(
       'SELECT prix_unitaire FROM seuils_consommation WHERE type_consommation = $1', ['electricite']
     ).catch(() => ({ rows: [] }));
@@ -386,7 +444,12 @@ const addElectricityConsumption = async (req, res) => {
       [date_releve, p1, p2, p3, consommation_jour, cout_total]
     );
 
+    if (req.user) logAction(req.user.id, 'CREATE_ELEC', 'consommation_electricite', req.ip);
     res.status(201).json(result.rows[0]);
+
+    // Vérification alertes en arrière-plan
+    verifierEtCreerAlertes(req.user?.id || null, req.user ? `${req.user.prenom || ''} ${req.user.nom || ''}`.trim() : 'Système')
+      .catch(err => console.error('[Alertes] Erreur auto après ajout élec:', err.message));
   } catch (err) {
     console.error('Erreur addElectricityConsumption:', err);
     res.status(500).json({ message: 'Erreur serveur.' });
@@ -397,16 +460,25 @@ const updateElectricityConsumption = async (req, res) => {
   try {
     const { id } = req.params;
     const { date_releve, phase1, phase2, phase3 } = req.body;
-    
+
+    const p1 = parseFloat(phase1), p2 = parseFloat(phase2), p3 = parseFloat(phase3);
+    const consommation_jour = parseFloat((p1 + p2 + p3).toFixed(3));
+
+    const seuilRes = await db.query(
+      'SELECT prix_unitaire FROM seuils_consommation WHERE type_consommation = $1', ['electricite']
+    ).catch(() => ({ rows: [] }));
+    const prix = seuilRes.rows.length > 0 ? parseFloat(seuilRes.rows[0].prix_unitaire) : 0.700;
+    const cout_total = parseFloat((consommation_jour * prix).toFixed(3));
+
     const result = await db.query(
-      'UPDATE consommation_electricite SET date_releve = $1, phase1 = $2, phase2 = $3, phase3 = $4 WHERE id = $5 RETURNING *',
-      [date_releve, parseFloat(phase1), parseFloat(phase2), parseFloat(phase3), id]
+      'UPDATE consommation_electricite SET date_releve = $1, phase1 = $2, phase2 = $3, phase3 = $4, consommation_jour = $5, cout_total = $6 WHERE id = $7 RETURNING *',
+      [date_releve, p1, p2, p3, consommation_jour, cout_total, id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Enregistrement non trouvé.' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Erreur updateElectricityConsumption:', err);
@@ -431,7 +503,6 @@ const deleteElectricityConsumption = async (req, res) => {
   }
 };
 
-// ── CRUD Operations for Photovoltaic Production ────────────────────
 const addPhotovoltaicProduction = async (req, res) => {
   try {
     const { date, production_journaliere_kwh, puissance_installee_kwp, heures_equivalentes_h, production_cumulee_kwh } = req.body;
@@ -498,20 +569,62 @@ const deletePhotovoltaicProduction = async (req, res) => {
   }
 };
 
-// ── CRUD Operations for Interventions ─────────────────────────────
 const addIntervention = async (req, res) => {
   try {
     const { date_intervention, type_intervention, description, technicien, statut, cout } = req.body;
-    
+
     if (!date_intervention || !type_intervention || !technicien || !statut) {
       return res.status(400).json({ message: 'Date, type, technicien et statut sont requis.' });
     }
-    
+
     const result = await db.query(
       'INSERT INTO interventions (date_intervention, type_intervention, description, technicien, statut, cout) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
       [date_intervention, type_intervention, description, technicien, statut, parseFloat(cout || 0)]
     );
-    
+
+    if (req.user) logAction(req.user.id, 'CREATE_INTERVENTION', 'interventions', req.ip);
+
+    // Send email notification to assigned technician for planned preventive interventions
+    if (type_intervention === 'Preventive' && statut === 'Planifiee') {
+      const emailMatch = (technicien || '').match(/<(.+?)>/);
+      if (emailMatch && process.env.EMAIL_USER) {
+        const techEmail = emailMatch[1];
+        const techName  = technicien.replace(/<.+?>/, '').trim();
+        const dateFormatted = new Date(date_intervention).toLocaleDateString('fr-FR');
+        const detailsHtml = (description || '')
+          .split(' | ')
+          .map(p => `<tr><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${p.trim()}</td></tr>`)
+          .join('');
+        try {
+          const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+            tls: { rejectUnauthorized: false }
+          });
+          await transporter.sendMail({
+            from: `"ELEONETECH" <${process.env.EMAIL_USER}>`,
+            to: techEmail,
+            subject: `ELEONETECH - Nouvelle intervention préventive le ${dateFormatted}`,
+            html: `
+              <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+                <h2 style="color:#1e3a5f;border-bottom:2px solid #4f46e5;padding-bottom:10px;">📅 Intervention préventive planifiée</h2>
+                <p>Bonjour <strong>${techName}</strong>,</p>
+                <p>Une intervention préventive vous a été assignée :</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8fafc;border-radius:8px;overflow:hidden;">
+                  <tr style="background:#4f46e5;color:white;"><td style="padding:10px 12px;font-weight:bold;">Date : ${dateFormatted}</td></tr>
+                  ${detailsHtml}
+                </table>
+                <p>Connectez-vous à ELEONETECH pour consulter les détails complets.</p>
+                <p style="color:#999;font-size:12px;">Message automatique — Ne pas répondre.</p>
+              </div>
+            `
+          });
+        } catch (mailErr) {
+          console.error('Erreur email intervention planifiée:', mailErr.message);
+        }
+      }
+    }
+
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Erreur addIntervention:', err);
@@ -557,7 +670,6 @@ const deleteIntervention = async (req, res) => {
   }
 };
 
-// ── Verification credentials technicien (public, sans JWT) ────────
 const verifierTechnicienPublic = async (req, res) => {
   const { email, mot_de_passe } = req.body;
   if (!email || !mot_de_passe) {
@@ -590,9 +702,6 @@ const verifierTechnicienPublic = async (req, res) => {
   }
 };
 
-// ── Interventions planifiées pour un équipement (scan QR) ─────────
-// SQL MIGRATION requise (une seule fois) :
-// ALTER TABLE interventions_staging ADD COLUMN IF NOT EXISTS intervention_id INTEGER REFERENCES interventions(id) ON DELETE SET NULL;
 const getInterventionsPlanifieesParEquipement = async (req, res) => {
   const { equipementId } = req.params;
   try {
@@ -614,7 +723,6 @@ const getInterventionsPlanifieesParEquipement = async (req, res) => {
   }
 };
 
-// ── CRUD Operations for Interventions Staging ─────────────────────
 const addInterventionStaging = async (req, res) => {
   try {
     const { date_intervention, heure, action, type_intervention, description, technicien, equipement, intervention_id, sous_equipement } = req.body;
@@ -651,23 +759,37 @@ const getInterventionsStaging = async (req, res) => {
 
 const validerInterventionStaging = async (req, res) => {
   const { id } = req.params;
+  const client = await db.connect();
   try {
-    const staging = await db.query('SELECT * FROM interventions_staging WHERE id = $1', [id]);
+    await client.query('BEGIN');
+
+    const staging = await client.query('SELECT * FROM interventions_staging WHERE id = $1', [id]);
     if (staging.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Intervention introuvable.' });
     }
 
     const s = staging.rows[0];
-
-    // Déterminer le statut final : clôturée si date_cloture renseignée
     const estClotureee = !!s.date_cloture;
 
     if (s.intervention_id) {
-      // Workflow planifié : mettre à jour le statut de l'intervention parente
       const nouveauStatut = estClotureee ? 'Terminee' : 'En cours';
-      await db.query('UPDATE interventions SET statut = $1 WHERE id = $2', [nouveauStatut, s.intervention_id]);
+      if (estClotureee) {
+        const closureParts = [
+          s.sous_equipement     ? `Sous-equip: ${s.sous_equipement}`    : null,
+          s.heure_cloture       ? `Cloture: ${s.heure_cloture}`         : null,
+          s.description_cloture ? `Travaux: ${s.description_cloture}`   : null,
+        ].filter(Boolean).join(' | ');
+        await client.query(
+          `UPDATE interventions SET statut = $1,
+             description = CASE WHEN $2 <> '' THEN description || ' | ' || $2 ELSE description END
+           WHERE id = $3`,
+          [nouveauStatut, closureParts, s.intervention_id]
+        );
+      } else {
+        await client.query('UPDATE interventions SET statut = $1 WHERE id = $2', [nouveauStatut, s.intervention_id]);
+      }
     } else {
-      // Curatif / libre : créer une entrée dans interventions
       const descParts = [
         s.heure            ? `Heure: ${s.heure}`                       : null,
         s.equipement       ? `Equipement: ${s.equipement}`             : null,
@@ -678,19 +800,30 @@ const validerInterventionStaging = async (req, res) => {
         s.description_cloture ? `Travaux: ${s.description_cloture}` : null,
       ].filter(Boolean);
 
-      await db.query(
+      const inserted = await client.query(
         `INSERT INTO interventions (date_intervention, type_intervention, description, technicien, statut, cout)
-         VALUES ($1, $2, $3, $4, $5, 0)`,
+         VALUES ($1, $2, $3, $4, $5, 0) RETURNING id`,
         [s.date_intervention, s.type_intervention, descParts.join(' | '), s.technicien,
          estClotureee ? 'Terminee' : 'En cours']
       );
+      // Link staging row to the newly created main intervention
+      await client.query(
+        'UPDATE interventions_staging SET intervention_id = $1 WHERE id = $2',
+        [inserted.rows[0].id, id]
+      );
     }
 
-    await db.query('UPDATE interventions_staging SET statut = $1 WHERE id = $2', ['Validee', id]);
+    await client.query('UPDATE interventions_staging SET statut = $1 WHERE id = $2', ['Validee', id]);
+    await client.query('COMMIT');
+
+    logAction(req.user.id, 'VALIDER_STAGING', 'interventions_staging', req.ip);
     res.json({ message: 'Intervention validee.' });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Erreur validerInterventionStaging:', err);
     res.status(500).json({ message: 'Erreur serveur.' });
+  } finally {
+    client.release();
   }
 };
 
@@ -711,7 +844,6 @@ const rejeterInterventionStaging = async (req, res) => {
   }
 };
 
-// ── GET open staging records for a technician (public — used from scan QR page) ──
 const getMesOuvertesStaging = async (req, res) => {
   const { technicien, equipement } = req.query;
   if (!technicien) return res.status(400).json({ message: 'Technicien requis.' });
@@ -735,15 +867,17 @@ const getMesOuvertesStaging = async (req, res) => {
   }
 };
 
-// ── PUT close an open staging record (public — used from scan QR page) ──
 const cloturerInterventionStaging = async (req, res) => {
   const { id } = req.params;
   const { date_cloture, heure_cloture, description_cloture } = req.body;
   if (!date_cloture || !heure_cloture) {
     return res.status(400).json({ message: 'Date et heure de clôture sont requises.' });
   }
+  const client = await db.connect();
   try {
-    const result = await db.query(
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `UPDATE interventions_staging
        SET date_cloture = $1, heure_cloture = $2, description_cloture = $3
        WHERE id = $4 AND action = 'Ouverture' AND date_cloture IS NULL
@@ -751,12 +885,36 @@ const cloturerInterventionStaging = async (req, res) => {
       [date_cloture, heure_cloture, description_cloture || null, id]
     );
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Intervention ouverte introuvable (déjà clôturée ?).' });
     }
-    res.json(result.rows[0]);
+
+    const s = result.rows[0];
+    // If already linked to a main intervention (QR/mobile flow), close it immediately
+    if (s.intervention_id) {
+      const closureParts = [
+        s.sous_equipement     ? `Sous-equip: ${s.sous_equipement}`  : null,
+        `Cloture: ${s.heure_cloture}`,
+        s.description_cloture ? `Travaux: ${s.description_cloture}` : null,
+      ].filter(Boolean).join(' | ');
+
+      await client.query(
+        `UPDATE interventions
+         SET statut = 'Terminee',
+             description = CASE WHEN $1 <> '' THEN description || ' | ' || $1 ELSE description END
+         WHERE id = $2`,
+        [closureParts, s.intervention_id]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json(s);
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Erreur cloturerInterventionStaging:', err);
     res.status(500).json({ message: 'Erreur serveur.' });
+  } finally {
+    client.release();
   }
 };
 
@@ -832,29 +990,30 @@ const getInterventionFormQr = async (req, res) => {
 };
 
 module.exports = {
-  // Water
+  
   getWaterConsumption,
   getWaterConsumptionStats,
   addWaterConsumption,
   updateWaterConsumption,
   deleteWaterConsumption,
   recalculerEau,
-  
-  // Electricity
+  recalculerElec,
+
+
   getElectricityConsumption,
   getElectricityConsumptionStats,
   addElectricityConsumption,
   updateElectricityConsumption,
   deleteElectricityConsumption,
   
-  // Photovoltaic
+  
   getPhotovoltaicProduction,
   getPhotovoltaicProductionStats,
   addPhotovoltaicProduction,
   updatePhotovoltaicProduction,
   deletePhotovoltaicProduction,
   
-  // Interventions
+  
   getInterventions,
   getInterventionsStats,
   addIntervention,
@@ -862,7 +1021,7 @@ module.exports = {
   deleteIntervention,
   getEnergieQr,
   getInterventionFormQr,
-  // Staging
+  
   verifierTechnicienPublic,
   addInterventionStaging,
   getInterventionsStaging,

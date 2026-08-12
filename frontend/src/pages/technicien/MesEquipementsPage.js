@@ -1,7 +1,5 @@
-// ============================================================
-// PAGE MES ÉQUIPEMENTS (TECHNICIEN)
-// Cartes équipements + modal détails avec sous-équipements
-// ============================================================
+
+
 import React, { useState, useEffect } from 'react';
 import { equipementsAPI, sousEquipAPI } from '../../api';
 
@@ -59,13 +57,13 @@ export default function MesEquipementsPage() {
   return (
     <div className="p-6 bg-gray-50 min-h-full">
 
-      {/* ── En-tête ── */}
+      
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Mes Équipements</h1>
         <p className="text-gray-500 text-sm mt-0.5">Sélectionnez un équipement pour consulter ses sous-équipements</p>
       </div>
 
-      {/* ── Recherche + stats ── */}
+      
       <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
@@ -93,7 +91,7 @@ export default function MesEquipementsPage() {
         </div>
       ) : (
         <>
-          {/* ── Grille équipements ── */}
+          
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
             {equipementsFiltres.map((eq) => (
               <div
@@ -105,7 +103,7 @@ export default function MesEquipementsPage() {
                     : 'border-gray-100 hover:border-blue-200'
                 }`}
               >
-                {/* Card header */}
+                
                 <div className="bg-gradient-to-r from-blue-900 to-blue-700 px-5 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-xl">⚙️</div>
@@ -119,7 +117,7 @@ export default function MesEquipementsPage() {
                   )}
                 </div>
 
-                {/* Card body */}
+                
                 <div className="px-5 py-4 flex items-center justify-between">
                   <p className="text-xs text-gray-400">Cliquer pour voir les détails</p>
                   <span className="text-blue-600 text-sm font-medium">→</span>
@@ -135,7 +133,7 @@ export default function MesEquipementsPage() {
             )}
           </div>
 
-          {/* ── Stats ── */}
+          
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { icon: '⚙️', label: 'Équipements', value: equipements.length, bg: 'bg-blue-50', text: 'text-blue-900' },
@@ -155,12 +153,12 @@ export default function MesEquipementsPage() {
         </>
       )}
 
-      {/* ── Modal détails ── */}
+      
       {selectedEq && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
 
-            {/* Header modal */}
+            
             <div className="bg-gradient-to-r from-blue-900 to-blue-700 px-6 py-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
@@ -179,7 +177,7 @@ export default function MesEquipementsPage() {
                 </button>
               </div>
 
-              {/* Résumé statuts */}
+              
               {!seLoading && sousEquips.length > 0 && (
                 <div className="flex gap-2 mt-4 flex-wrap">
                   {Object.entries(STATUT_CONFIG).map(([key, cfg]) => {
@@ -195,7 +193,7 @@ export default function MesEquipementsPage() {
               )}
             </div>
 
-            {/* Corps modal */}
+            
             <div className="flex-1 overflow-y-auto px-6 py-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">

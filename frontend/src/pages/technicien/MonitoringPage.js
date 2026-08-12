@@ -1,7 +1,5 @@
-// ============================================================
-// TECHNICIEN MONITORING PAGE
-// Eau, Électricité, Photovoltaïque — CRUD + alertes seuil
-// ============================================================
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { monitoringAPI } from '../../api';
 import { validerNumerique, validerDate, validerFormulaire } from '../../utils/validators';
@@ -44,13 +42,32 @@ const MonitoringPage = () => {
   const [qrCopied, setQrCopied]     = useState(false);
 
   // Alerte seuil
-  const [alerteSeuil, setAlerteSeuil] = useState(null);
+  const [alerteSeuil,   setAlerteSeuil]   = useState(null);
+  const [recalcMsg,     setRecalcMsg]     = useState(null);
+  const [recalcLoading, setRecalcLoading] = useState(false);
 
   useEffect(() => {
     setDateDebut('');
     setDateFin('');
+    setRecalcMsg(null);
     fetchData();
   }, [activeTab]);
+
+  const handleRecalculer = async (type) => {
+    setRecalcLoading(true);
+    setRecalcMsg(null);
+    try {
+      const res = type === 'eau'
+        ? await monitoringAPI.recalculerEau()
+        : await monitoringAPI.recalculerElec();
+      setRecalcMsg({ ok: true, text: res.data.message });
+      fetchData();
+    } catch (err) {
+      setRecalcMsg({ ok: false, text: err.response?.data?.message || 'Erreur lors du recalcul.' });
+    } finally {
+      setRecalcLoading(false);
+    }
+  };
 
   const filteredData = useMemo(() => {
     let result = [...data];
@@ -60,6 +77,8 @@ const MonitoringPage = () => {
     };
     if (dateDebut) result = result.filter(item => { const d = getDateStr(item); return d && d >= dateDebut; });
     if (dateFin)   result = result.filter(item => { const d = getDateStr(item); return d && d <= dateFin;   });
+    // PV: only show rows with actual production (> 0)
+    if (activeTab === 'photovoltaique') result = result.filter(item => parseFloat(item.production_journaliere_kwh || 0) > 0);
     return result;
   }, [data, dateDebut, dateFin, activeTab]);
 
@@ -111,7 +130,7 @@ const MonitoringPage = () => {
     }
   };
 
-  // ── Modals ────────────────────────────────────────────────
+  
   const chargerEnergieQr = async (type) => {
     try {
       const res = await monitoringAPI.getEnergieQr(type, window.location.origin);
@@ -178,7 +197,7 @@ const MonitoringPage = () => {
     }
   };
 
-  // ── Validation et soumission ──────────────────────────────
+  
   const handleFormSubmit = async () => {
     setFormError('');
 
@@ -190,7 +209,7 @@ const MonitoringPage = () => {
         date_releve: validerDate(formData.date_releve, 'La date du relevé'),
         compteur:    validerNumerique(formData.compteur, 'La valeur du compteur', { min: 0 }),
       };
-      // Avertir si compteur < dernier relevé (compteur reculé ou saisie erronée)
+      
       if (!editItem && formData.compteur) {
         const dernierReleve = data.find(d => d.compteur != null);
         if (dernierReleve && parseFloat(formData.compteur) < parseFloat(dernierReleve.compteur)) {
@@ -242,7 +261,7 @@ const MonitoringPage = () => {
       setShowModal(false);
       fetchData();
 
-      // Vérifier seuil uniquement lors d'un ajout (eau et électricité)
+      
       if (!editItem && (modalType === 'eau' || modalType === 'electricite')) {
         await verifierSeuil(modalType);
       }
@@ -254,7 +273,7 @@ const MonitoringPage = () => {
     }
   };
 
-  // ── Stats card ────────────────────────────────────────────
+  
   const renderStats = (cards) => (
     <div className={`grid grid-cols-1 md:grid-cols-${cards.length} gap-4`}>
       {cards.map((c) => (
@@ -266,7 +285,7 @@ const MonitoringPage = () => {
     </div>
   );
 
-  // ── Render Eau ────────────────────────────────────────────
+  
   const renderWaterTab = () => (
     <div className="space-y-6">
       {renderStats([
@@ -278,13 +297,28 @@ const MonitoringPage = () => {
       ])}
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center flex-wrap gap-2">
           <h3 className="text-lg font-medium text-gray-900">Relevés de consommation d'eau</h3>
-          <button onClick={() => openEauModal()}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
-            <span>+</span> Ajouter un relevé
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => handleRecalculer('eau')}
+              disabled={recalcLoading}
+              title="Recalcule consommation_jour et coût pour tous les relevés importés"
+              className="bg-amber-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50"
+            >
+              {recalcLoading ? '...' : '🔄 Recalculer coûts'}
+            </button>
+            <button onClick={() => openEauModal()}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
+              <span>+</span> Ajouter un relevé
+            </button>
+          </div>
         </div>
+        {recalcMsg && (
+          <div className={`mx-6 mt-3 p-3 rounded-lg text-sm ${recalcMsg.ok ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {recalcMsg.text}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead className="bg-gray-50">
@@ -338,13 +372,28 @@ const MonitoringPage = () => {
       ])}
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center flex-wrap gap-2">
           <h3 className="text-lg font-medium text-gray-900">Relevés de consommation électrique</h3>
-          <button onClick={() => openElecModal()}
-            className="bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 flex items-center gap-2">
-            <span>+</span> Ajouter un relevé
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => handleRecalculer('electricite')}
+              disabled={recalcLoading}
+              title="Recalcule consommation_jour et coût pour tous les relevés importés"
+              className="bg-amber-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50"
+            >
+              {recalcLoading ? '...' : '🔄 Recalculer coûts'}
+            </button>
+            <button onClick={() => openElecModal()}
+              className="bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 flex items-center gap-2">
+              <span>+</span> Ajouter un relevé
+            </button>
+          </div>
         </div>
+        {recalcMsg && (
+          <div className={`mx-6 mt-3 p-3 rounded-lg text-sm ${recalcMsg.ok ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {recalcMsg.text}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead className="bg-gray-50">

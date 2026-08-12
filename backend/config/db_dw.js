@@ -1,14 +1,15 @@
-// ============================================================
-// CONNEXION DATA WAREHOUSE - eleonetech_dw
-// Séparée de la base principale eleonetech_db
-// ============================================================
 const { Pool } = require('pg');
 
+const _dwUrl = process.env.DB_DW_URL;
+const _dwSsl = _dwUrl && !/localhost|127\.0\.0\.1/.test(_dwUrl)
+  ? { rejectUnauthorized: false }
+  : false;
+
 const dw = new Pool(
-  process.env.DB_DW_URL
+  _dwUrl
     ? {
-        connectionString: process.env.DB_DW_URL,
-        ssl: { rejectUnauthorized: false },
+        connectionString: _dwUrl,
+        ssl: _dwSsl,
         max: 10,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 10000,
@@ -17,7 +18,7 @@ const dw = new Pool(
         host:     process.env.DB_DW_HOST     || 'localhost',
         port:     process.env.DB_DW_PORT     || 5432,
         user:     process.env.DB_DW_USER     || 'postgres',
-        password: process.env.DB_DW_PASSWORD || '',
+        password: process.env.DB_DW_PASSWORD || process.env.DB_PASSWORD,
         database: process.env.DB_DW_NAME     || 'eleonetech_dw',
         ssl: false,
         max: 10,

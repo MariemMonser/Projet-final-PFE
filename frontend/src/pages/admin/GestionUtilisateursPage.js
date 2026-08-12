@@ -1,6 +1,5 @@
-// ============================================================
-// PAGE GESTION UTILISATEURS (Administrateur)
-// ============================================================
+
+
 import React, { useState, useEffect } from 'react';
 import { usersAPI } from '../../api';
 import {
@@ -10,13 +9,12 @@ import {
   validerFormulaire,
 } from '../../utils/validators';
 
-const ROLES = ['Administrateur', 'Responsable', 'Technicien', 'Lecteur'];
+const ROLES = ['Administrateur', 'Responsable', 'Technicien'];
 
 const ROLE_COLORS = {
   Administrateur: 'bg-red-100 text-red-800',
   Responsable:    'bg-blue-100 text-blue-800',
   Technicien:     'bg-green-100 text-green-800',
-  Lecteur:        'bg-gray-100 text-gray-700',
 };
 
 const initForm = { nom: '', prenom: '', email: '', mot_de_passe: '', role: 'Technicien' };
@@ -173,7 +171,7 @@ const GestionUtilisateursPage = () => {
   return (
     <div className="p-6">
 
-      {/* En-tête */}
+      
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gestion des Utilisateurs</h1>
@@ -185,7 +183,7 @@ const GestionUtilisateursPage = () => {
         </button>
       </div>
 
-      {/* Filtres */}
+      
       <div className="flex gap-3 mb-5 flex-wrap">
         <input type="text" placeholder="🔍 Rechercher nom, email..."
           value={search} onChange={(e) => setSearch(e.target.value)}
@@ -207,7 +205,7 @@ const GestionUtilisateursPage = () => {
         </div>
       )}
 
-      {/* Tableau */}
+      
       <div className="bg-white rounded-xl shadow border border-gray-100 overflow-visible">
         {loading ? (
           <div className="flex items-center justify-center py-16">
@@ -305,7 +303,7 @@ const GestionUtilisateursPage = () => {
         )}
       </div>
 
-      {/* Modal Créer / Modifier */}
+      
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
@@ -393,7 +391,7 @@ const GestionUtilisateursPage = () => {
         </div>
       )}
 
-      {/* Modal Suppression */}
+      
       {deleteUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">

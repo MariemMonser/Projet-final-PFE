@@ -1,6 +1,5 @@
-// ============================================================
-// SCAN EAU PAGE - Saisie directe sans login
-// ============================================================
+
+
 import React, { useState } from 'react';
 import axios from 'axios';
 
@@ -16,7 +15,8 @@ const ScanEauPage = () => {
   const [saved, setSaved]     = useState(false);
   const [erreur, setErreur]   = useState('');
 
-  const today = new Date().toISOString().split('T')[0];
+  const _d = new Date();
+  const today = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
 
   const handleConfirm = async () => {
     if (!valeur || parseFloat(valeur) < 0) {
@@ -43,7 +43,7 @@ const ScanEauPage = () => {
     setErreur('');
   };
 
-  // ── SUCCÈS ────────────────────────────────────────────────
+  
   if (saved) {
     return (
       <div style={s.page}>
@@ -63,7 +63,7 @@ const ScanEauPage = () => {
     );
   }
 
-  // ── FORMULAIRE ────────────────────────────────────────────
+  
   return (
     <div style={s.page}>
       <div style={s.card}>

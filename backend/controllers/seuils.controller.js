@@ -1,39 +1,69 @@
-// ============================================================
-// SEUILS CONTROLLER
-// Gestion des seuils de consommation et alertes
-// ============================================================
+
+
 const db = require('../config/db');
 const dw = require('../config/db_dw');
 const nodemailer = require('nodemailer');
+
+const makeTransporter = () => nodemailer.createTransport({
+  host: 'smtp.gmail.com', port: 587, secure: false,
+  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+});
+
+// Envoie une alerte automatiquement à tous les admins + responsables
+const envoyerAlertesAutoAdmin = async (alerteData) => {
+  try {
+    const usersRes = await db.query(
+      `SELECT email, prenom, nom FROM utilisateurs WHERE role IN ('Administrateur','Responsable') AND est_actif = true`
+    );
+    if (usersRes.rows.length === 0) return;
+    const destinataires = usersRes.rows.map(u => u.email).join(',');
+    const transporter = makeTransporter();
+    await transporter.sendMail({
+      from: `"ELEONETECH Alertes" <${process.env.EMAIL_USER}>`,
+      to: destinataires,
+      subject: `ELEONETECH - Alerte ${alerteData.type === 'eau' ? 'Eau' : 'Électricité'} détectée`,
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+          <div style="background:#fff3cd;padding:20px;border-radius:8px;border-left:4px solid #f59e0b;">
+            <h2 style="color:#b45309;margin:0 0 10px 0;">⚠️ Alerte consommation</h2>
+            <p><strong>Type :</strong> ${alerteData.type === 'eau' ? 'Eau' : 'Électricité'}</p>
+            <p><strong>Message :</strong> ${alerteData.message}</p>
+            <p><strong>Date :</strong> ${new Date(alerteData.date).toLocaleDateString('fr-FR')}</p>
+            <p><strong>Dépassement :</strong> ${parseFloat(alerteData.depassement).toFixed(2)} ${alerteData.type === 'eau' ? 'm³' : 'kWh'}</p>
+            <p><strong>Coût estimé :</strong> ${parseFloat(alerteData.cout_estime).toFixed(3)} DT</p>
+          </div>
+          <p style="color:#999;font-size:12px;margin-top:16px;">Alerte générée automatiquement par ELEONETECH.</p>
+        </div>
+      `
+    });
+    // Mark alert as emailed
+    await db.query(
+      `UPDATE alertes SET email_envoye = TRUE, date_email_envoye = NOW(), email_destinataire = $1
+       WHERE type_consommation = $2 AND date_alerte = $3 AND (email_envoye = FALSE OR email_envoye IS NULL)`,
+      [destinataires, alerteData.type, alerteData.date]
+    );
+  } catch (err) {
+    console.error('Erreur envoyerAlertesAutoAdmin:', err.message);
+  }
+};
 
 const dwSafe = async (sql) => {
   try { const r = await dw.query(sql); return r.rows; }
   catch (_) { return []; }
 };
 
+/* Mai(4)–Oct(9) = été, reste = hiver (Tunisie) */
+const getSaison = () => {
+  const m = new Date().getMonth();
+  return (m >= 4 && m <= 9) ? 'ete' : 'hiver';
+};
+
 const getSeuils = async (req, res) => {
   try {
-    // Valeurs par defaut - pas besoin de creer la table
-    const defaultSeuils = [
-      {
-        id: 1,
-        type_consommation: 'eau',
-        seuil_hiver: 9000,
-        seuil_ete: 12000,
-        prix_unitaire: 0.200,
-        unite: 'm3'
-      },
-      {
-        id: 2,
-        type_consommation: 'electricite',
-        seuil_hiver: 2300,
-        seuil_ete: 4000,
-        prix_unitaire: 0.700,
-        unite: 'kWh'
-      }
-    ];
-
-    res.json(defaultSeuils);
+    const result = await db.query(
+      'SELECT * FROM seuils_consommation ORDER BY id ASC'
+    );
+    res.json(result.rows);
   } catch (err) {
     console.error('Erreur getSeuils:', err);
     res.status(500).json({ message: 'Erreur serveur.' });
@@ -44,8 +74,20 @@ const updateSeuils = async (req, res) => {
   try {
     const { seuils } = req.body;
 
-    // Pas besoin de mettre a jour la base - juste retourner succes
-    res.json({ message: 'Seuils mis a jour avec succes.' });
+    if (!Array.isArray(seuils) || seuils.length === 0) {
+      return res.status(400).json({ message: 'Données invalides.' });
+    }
+
+    for (const s of seuils) {
+      await db.query(
+        `UPDATE seuils_consommation
+         SET seuil_hiver = $1, seuil_ete = $2, prix_unitaire = $3, updated_at = CURRENT_TIMESTAMP
+         WHERE type_consommation = $4`,
+        [s.seuil_hiver, s.seuil_ete, s.prix_unitaire, s.type_consommation]
+      );
+    }
+
+    res.json({ message: 'Seuils mis à jour avec succès.' });
   } catch (err) {
     console.error('Erreur updateSeuils:', err);
     res.status(500).json({ message: 'Erreur serveur.' });
@@ -70,154 +112,142 @@ const getAlertHistory = async (req, res) => {
   }
 };
 
+// ── Core alert logic (no HTTP context needed) ─────────────────────────────
+const verifierEtCreerAlertes = async (technicienId = null, technicienNom = 'Système') => {
+  const alertes = [];
+
+  const seuilsResult = await db.query('SELECT * FROM seuils_consommation');
+  const seuilsMap = {};
+  for (const row of seuilsResult.rows) seuilsMap[row.type_consommation] = row;
+
+  const seuilEau  = seuilsMap['eau']        || { seuil_hiver: 9000,  seuil_ete: 12000, prix_unitaire: 0.200 };
+  const seuilElec = seuilsMap['electricite'] || { seuil_hiver: 2300,  seuil_ete: 4000,  prix_unitaire: 0.700 };
+  const saison = getSaison();
+
+  // ── Eau : total mensuel du mois en cours ──────────────────────────────────
+  try {
+    const eauRes = await db.query(`
+      SELECT
+        DATE_TRUNC('month', date_releve)::date AS mois,
+        SUM(consommation_jour)                 AS total_mois,
+        MAX(date_releve)                       AS derniere_date
+      FROM consommation_eau
+      WHERE date_releve >= DATE_TRUNC('month', CURRENT_DATE)
+      GROUP BY 1
+    `);
+
+    if (eauRes.rows.length > 0) {
+      const { mois, total_mois, derniere_date } = eauRes.rows[0];
+      const total    = parseFloat(total_mois || 0);
+      const seuil    = parseFloat(saison === 'hiver' ? seuilEau.seuil_hiver : seuilEau.seuil_ete);
+
+      if (total > seuil) {
+        const alerteData = {
+          type:       'eau',
+          message:    `Consommation eau du mois elevee: ${total.toFixed(1)} m³ (seuil: ${seuil} m³)`,
+          date:       derniere_date,
+          valeur:     total,
+          seuil,
+          depassement: total - seuil,
+          cout_estime: (total - seuil) * parseFloat(seuilEau.prix_unitaire),
+        };
+
+        const existing = await db.query(
+          `SELECT id FROM alertes WHERE type_consommation = 'eau'
+           AND date_alerte >= DATE_TRUNC('month', CURRENT_DATE)`,
+        );
+        if (existing.rows.length === 0) {
+          await db.query(`
+            INSERT INTO alertes
+              (type_consommation, message, date_alerte, valeur, seuil, depassement,
+               cout_estime, technicien_id, technicien_nom, commentaire, email_envoye)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,FALSE)
+          `, [alerteData.type, alerteData.message, alerteData.date,
+              alerteData.valeur, alerteData.seuil, alerteData.depassement,
+              alerteData.cout_estime, technicienId, technicienNom,
+              'Alerte générée automatiquement']);
+          envoyerAlertesAutoAdmin(alerteData);
+          console.log(`[Alertes] Alerte eau créée : ${total.toFixed(1)} m³ > ${seuil} m³`);
+        }
+        alertes.push(alerteData);
+      }
+    }
+  } catch (err) {
+    console.error('[Alertes] Erreur vérification eau:', err.message);
+  }
+
+  // ── Electricité : total mensuel du mois en cours ──────────────────────────
+  try {
+    const elecRes = await db.query(`
+      SELECT
+        DATE_TRUNC('month', date_releve)::date AS mois,
+        SUM(consommation_jour)                 AS total_mois,
+        MAX(date_releve)                       AS derniere_date
+      FROM consommation_electricite
+      WHERE date_releve >= DATE_TRUNC('month', CURRENT_DATE)
+      GROUP BY 1
+    `);
+
+    if (elecRes.rows.length > 0) {
+      const { mois, total_mois, derniere_date } = elecRes.rows[0];
+      const total = parseFloat(total_mois || 0);
+      const seuil = parseFloat(saison === 'hiver' ? seuilElec.seuil_hiver : seuilElec.seuil_ete);
+
+      if (total > seuil) {
+        const alerteData = {
+          type:       'electricite',
+          message:    `Consommation electricite du mois elevee: ${total.toFixed(1)} kWh (seuil: ${seuil} kWh)`,
+          date:       derniere_date,
+          valeur:     total,
+          seuil,
+          depassement: total - seuil,
+          cout_estime: (total - seuil) * parseFloat(seuilElec.prix_unitaire),
+        };
+
+        const existing = await db.query(
+          `SELECT id FROM alertes WHERE type_consommation = 'electricite'
+           AND date_alerte >= DATE_TRUNC('month', CURRENT_DATE)`,
+        );
+        if (existing.rows.length === 0) {
+          await db.query(`
+            INSERT INTO alertes
+              (type_consommation, message, date_alerte, valeur, seuil, depassement,
+               cout_estime, technicien_id, technicien_nom, commentaire, email_envoye)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,FALSE)
+          `, [alerteData.type, alerteData.message, alerteData.date,
+              alerteData.valeur, alerteData.seuil, alerteData.depassement,
+              alerteData.cout_estime, technicienId, technicienNom,
+              'Alerte générée automatiquement']);
+          envoyerAlertesAutoAdmin(alerteData);
+          console.log(`[Alertes] Alerte élec créée : ${total.toFixed(1)} kWh > ${seuil} kWh`);
+        }
+        alertes.push(alerteData);
+      }
+    }
+  } catch (err) {
+    console.error('[Alertes] Erreur vérification électricité:', err.message);
+  }
+
+  return alertes;
+};
+
 const checkAlertes = async (req, res) => {
   try {
-    const alertes = [];
-
-    // Valeurs par defaut
-    const seuilEau = { seuil_hiver: 9000, seuil_ete: 12000, prix_unitaire: 0.200 };
-    const seuilElec = { seuil_hiver: 2300, seuil_ete: 4000, prix_unitaire: 0.700 };
-
-    // Get current technician info from token
-    const technicienId = req.user?.id || null;
+    const technicienId  = req.user?.id || null;
     const technicienNom = req.user?.nom
       ? `${req.user.prenom || ''} ${req.user.nom}`.trim()
       : 'Technicien';
 
-    // Verifier consommation eau - only unsent alerts
-    try {
-      const eauData = await db.query(
-        "SELECT date_releve, compteur, CASE WHEN LAG(compteur, 1, compteur) OVER (ORDER BY date_releve) = compteur THEN 0 ELSE compteur - LAG(compteur, 1, compteur) OVER (ORDER BY date_releve) END as consommation_journaliere FROM consommation_eau ORDER BY date_releve DESC LIMIT 30"
-      );
-
-      if (eauData.rows.length > 0) {
-        const derniereConso = eauData.rows[0];
-        const saisonActuelle = new Date().getMonth() >= 11 || new Date().getMonth() <= 3 ? 'hiver' : 'ete';
-        const seuilActuel = saisonActuelle === 'hiver' ? seuilEau.seuil_hiver : seuilEau.seuil_ete;
-
-        if (derniereConso.consommation_journaliere > seuilActuel) {
-          const alerteData = {
-            type: 'eau',
-            message: `Consommation eau elevee: ${derniereConso.consommation_journaliere} m3 (seuil: ${seuilActuel} m3)`,
-            date: derniereConso.date_releve,
-            valeur: derniereConso.consommation_journaliere,
-            seuil: seuilActuel,
-            depassement: derniereConso.consommation_journaliere - seuilActuel,
-            cout_estime: (derniereConso.consommation_journaliere - seuilActuel) * seuilEau.prix_unitaire
-          };
-
-          // Check if this alert was already sent
-          const existingAlert = await db.query(
-            'SELECT id FROM alertes WHERE type_consommation = $1 AND date_alerte = $2 AND email_envoye = TRUE',
-            [alerteData.type, alerteData.date]
-          );
-
-          if (existingAlert.rows.length === 0) {
-            alertes.push(alerteData);
-
-            // Store alert in database
-            try {
-              await db.query(`
-                INSERT INTO alertes
-                (type_consommation, message, date_alerte, valeur, seuil, depassement,
-                 cout_estime, technicien_id, technicien_nom, commentaire, email_envoye)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
-              `, [
-                alerteData.type,
-                alerteData.message,
-                alerteData.date,
-                alerteData.valeur,
-                alerteData.seuil,
-                alerteData.depassement,
-                alerteData.cout_estime,
-                technicienId,
-                technicienNom,
-                'Alerte generee automatiquement'
-              ]);
-              console.log('Alerte eau stockee en base de donnees (non envoyee)');
-            } catch (dbErr) {
-              console.error('Erreur stockage alerte eau:', dbErr.message);
-            }
-          } else {
-            console.log('Alerte eau deja envoyee, ignoree');
-          }
-        }
-      }
-    } catch (err) {
-      console.log('Table consommation_eau non disponible:', err.message);
-    }
-
-    // Verifier consommation electricite - only unsent alerts
-    try {
-      const elecData = await db.query(
-        'SELECT date_releve, consommation_jour FROM consommation_electricite ORDER BY date_releve DESC LIMIT 30'
-      );
-
-      if (elecData.rows.length > 0) {
-        const derniereConso = elecData.rows[0];
-        const saisonActuelle = new Date().getMonth() >= 11 || new Date().getMonth() <= 3 ? 'hiver' : 'ete';
-        const seuilActuel = saisonActuelle === 'hiver' ? seuilElec.seuil_hiver : seuilElec.seuil_ete;
-
-        if (derniereConso.consommation_jour > seuilActuel) {
-          const alerteData = {
-            type: 'electricite',
-            message: `Consommation electricite elevee: ${derniereConso.consommation_jour} kWh (seuil: ${seuilActuel} kWh)`,
-            date: derniereConso.date_releve,
-            valeur: derniereConso.consommation_jour,
-            seuil: seuilActuel,
-            depassement: derniereConso.consommation_jour - seuilActuel,
-            cout_estime: (derniereConso.consommation_jour - seuilActuel) * seuilElec.prix_unitaire
-          };
-
-          // Check if this alert was already sent
-          const existingAlert = await db.query(
-            'SELECT id FROM alertes WHERE type_consommation = $1 AND date_alerte = $2 AND email_envoye = TRUE',
-            [alerteData.type, alerteData.date]
-          );
-
-          if (existingAlert.rows.length === 0) {
-            alertes.push(alerteData);
-
-            // Store alert in database
-            try {
-              await db.query(`
-                INSERT INTO alertes
-                (type_consommation, message, date_alerte, valeur, seuil, depassement,
-                 cout_estime, technicien_id, technicien_nom, commentaire, email_envoye)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
-              `, [
-                alerteData.type,
-                alerteData.message,
-                alerteData.date,
-                alerteData.valeur,
-                alerteData.seuil,
-                alerteData.depassement,
-                alerteData.cout_estime,
-                technicienId,
-                technicienNom,
-                'Alerte generee automatiquement'
-              ]);
-              console.log('Alerte electricite stockee en base de donnees (non envoyee)');
-            } catch (dbErr) {
-              console.error('Erreur stockage alerte electricite:', dbErr.message);
-            }
-          } else {
-            console.log('Alerte electricite deja envoyee, ignoree');
-          }
-        }
-      }
-    } catch (err) {
-      console.log('Table consommation_electricite non disponible:', err.message);
-    }
+    const alertes = await verifierEtCreerAlertes(technicienId, technicienNom);
 
     res.json({
-      alertes: alertes,
+      alertes,
       currentUser: {
-        id: req.user?.id,
-        nom: req.user?.nom,
+        id:     req.user?.id,
+        nom:    req.user?.nom,
         prenom: req.user?.prenom,
-        email: req.user?.email
-      }
+        email:  req.user?.email,
+      },
     });
   } catch (err) {
     console.error('Erreur checkAlertes:', err);
@@ -234,18 +264,18 @@ const sendAlertEmail = async (req, res) => {
       return res.status(400).json({ message: 'Donnees invalides.' });
     }
 
-    // Fixed transporter
+    
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 587,
-      secure: false, // TLS
+      secure: false, 
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
     });
 
-    // Format alert details
+    
     const alertDetails = alerts.map(alert =>
       `Type: ${alert.type === 'eau' ? 'Eau' : 'Electricite'}<br/>
        Message: ${alert.message}<br/>
@@ -255,7 +285,7 @@ const sendAlertEmail = async (req, res) => {
     ).join('<br/><hr/>');
 
     const mailOptions = {
-      from: `"ELEONETECH Alertes" <${process.env.EMAIL_USER}>`, // display name
+      from: `"ELEONETECH Alertes" <${process.env.EMAIL_USER}>`, 
       to: email,
       subject: `ELEONETECH - ${alerts.length} alerte(s) detectee(s)`,
       html: `
@@ -281,7 +311,7 @@ const sendAlertEmail = async (req, res) => {
     const result = await transporter.sendMail(mailOptions);
     console.log('Email envoye:', result.messageId);
 
-    // Mark alerts as email sent in database with custom comment
+    
     try {
       await db.query(`
         UPDATE alertes
@@ -291,7 +321,10 @@ const sendAlertEmail = async (req, res) => {
             commentaire = $2
         WHERE email_envoye = FALSE
         AND type_consommation = ANY($3)
-      `, [email, comment || 'Alerte generee automatiquement', alerts.map(alert => alert.type)]);
+        AND date_alerte = ANY($4::date[])
+      `, [email, comment || 'Alerte generee automatiquement',
+          alerts.map(a => a.type),
+          alerts.map(a => a.date)]);
       console.log('Alertes marquees comme email envoye avec commentaire en base de donnees');
     } catch (dbErr) {
       console.error('Erreur mise a jour statut email:', dbErr.message);
@@ -304,20 +337,47 @@ const sendAlertEmail = async (req, res) => {
   }
 };
 
-// ── GET /api/seuils/notifications ────────────────────────
+const dismissNotification = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  try {
+    await db.query(
+      `INSERT INTO dismissed_notifications (user_id, notif_id, dismissed_at)
+       VALUES ($1, $2, NOW()) ON CONFLICT (user_id, notif_id) DO NOTHING`,
+      [userId, id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('dismissNotification:', err);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};
+
 const getNotifications = async (req, res) => {
   const items = [];
+  const userId = req.user.id;
 
-  // 1. Alertes seuil non encore envoyees par email
+  // Get dismissed notification IDs for this user
+  let dismissed = new Set();
+  try {
+    const dRes = await db.query(
+      'SELECT notif_id FROM dismissed_notifications WHERE user_id = $1', [userId]
+    );
+    dismissed = new Set(dRes.rows.map(r => r.notif_id));
+  } catch (_) {}
+
+
   try {
     const alertes = await db.query(`
       SELECT id, type_consommation, message, date_alerte, valeur, seuil, depassement
       FROM alertes
-      WHERE email_envoye = false OR email_envoye IS NULL
+      WHERE (email_envoye = false OR email_envoye IS NULL)
+        AND date_alerte >= NOW() - INTERVAL '30 days'
       ORDER BY date_alerte DESC
       LIMIT 10
     `);
     for (const a of alertes.rows) {
+      if (dismissed.has(`alerte-${a.id}`)) continue;
       items.push({
         id:       `alerte-${a.id}`,
         type:     'alerte',
@@ -332,7 +392,7 @@ const getNotifications = async (req, res) => {
     }
   } catch (_) {}
 
-  // 2. Fiches terrain en attente de validation
+  
   try {
     const staging = await db.query(`
       SELECT id, type_intervention, technicien, equipement, created_at
@@ -342,6 +402,7 @@ const getNotifications = async (req, res) => {
       LIMIT 10
     `);
     for (const s of staging.rows) {
+      if (dismissed.has(`staging-${s.id}`)) continue;
       items.push({
         id:       `staging-${s.id}`,
         type:     'intervention',
@@ -356,7 +417,7 @@ const getNotifications = async (req, res) => {
     }
   } catch (_) {}
 
-  // 3. Interventions planifiees dans les 3 prochains jours
+  
   try {
     const planifiees = await db.query(`
       SELECT id, date_intervention, type_intervention, description
@@ -367,6 +428,7 @@ const getNotifications = async (req, res) => {
       LIMIT 5
     `);
     for (const p of planifiees.rows) {
+      if (dismissed.has(`planifiee-${p.id}`)) continue;
       const desc = (p.description || '').split(' | ')[0].replace('Equipement: ', '');
       items.push({
         id:       `planifiee-${p.id}`,
@@ -387,7 +449,6 @@ const getNotifications = async (req, res) => {
   res.json({ total: items.length, items: items.slice(0, 15) });
 };
 
-// ── GET /api/seuils/alertes-mtbf ─────────────────────────
 const getAlertesMtbf = async (req, res) => {
   const rows = await dwSafe(`
     SELECT de.code_equipement,
@@ -404,7 +465,6 @@ const getAlertesMtbf = async (req, res) => {
   res.json(rows);
 };
 
-// ── GET /api/seuils/alertes-pdr ──────────────────────────
 const getAlertesPdr = async (req, res) => {
   const rows = await dwSafe(`
     SELECT dp.code_prc, dp.designation,
@@ -425,9 +485,11 @@ module.exports = {
   getSeuils,
   updateSeuils,
   checkAlertes,
+  verifierEtCreerAlertes,
   sendAlertEmail,
   getAlertHistory,
   getNotifications,
+  dismissNotification,
   getAlertesMtbf,
   getAlertesPdr,
 };

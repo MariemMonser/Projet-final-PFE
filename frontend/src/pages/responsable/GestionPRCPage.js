@@ -1,8 +1,9 @@
-// ============================================================
-// GESTION PRC - Pièces de rechange (Responsable)
-// ============================================================
+
+
 import React, { useState, useEffect } from 'react';
 import { prcAPI, equipementsAPI } from '../../api';
+
+const fmtDate = (d) => d ? new Date(d).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
 
 const GestionPRCPage = () => {
   const [prcList, setPrcList]       = useState([]);
@@ -11,20 +12,28 @@ const GestionPRCPage = () => {
   const [search, setSearch]         = useState('');
   const [filterEquip, setFilterEquip] = useState('');
 
-  // Modal PRC
+  
   const [showModal, setShowModal]   = useState(false);
   const [editItem, setEditItem]     = useState(null);
   const [formData, setFormData]     = useState({ code_prc:'', designation:'', cout:'', stock:'', equipement_id:'' });
   const [formError, setFormError]   = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
-  // Modal stock
+  
   const [showStockModal, setShowStockModal] = useState(false);
   const [stockItem, setStockItem]   = useState(null);
-  const [stockForm, setStockForm]   = useState({ mouvement:'entree', quantite:'' });
+  const [stockForm, setStockForm]   = useState({ mouvement:'entree', quantite:'', motif:'' });
   const [stockError, setStockError] = useState('');
 
-  useEffect(() => { fetchAll(); }, []);
+  const [notifications, setNotifications]   = useState([]);
+  const [showNotifs, setShowNotifs]         = useState(false);
+
+  const [showHistModal, setShowHistModal]   = useState(false);
+  const [histItem, setHistItem]             = useState(null);
+  const [mouvements, setMouvements]         = useState([]);
+  const [histLoading, setHistLoading]       = useState(false);
+
+  useEffect(() => { fetchAll(); fetchNotifications(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -39,6 +48,32 @@ const GestionPRCPage = () => {
     setLoading(false);
   };
 
+  const fetchNotifications = async () => {
+    try {
+      const res = await prcAPI.getNotifications();
+      setNotifications(res.data || []);
+    } catch {}
+  };
+
+  const openHistModal = async (item) => {
+    setHistItem(item);
+    setMouvements([]);
+    setShowHistModal(true);
+    setHistLoading(true);
+    try {
+      const res = await prcAPI.getMouvements(item.id);
+      setMouvements(res.data || []);
+    } catch {}
+    setHistLoading(false);
+  };
+
+  const handleMarquerLue = async (notifId) => {
+    try {
+      await prcAPI.marquerLue(notifId);
+      setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, lu: true } : n));
+    } catch {}
+  };
+
   const filtered = prcList.filter(p => {
     const q = search.toLowerCase();
     const matchSearch = !q || p.code_prc?.toLowerCase().includes(q) || p.designation?.toLowerCase().includes(q);
@@ -46,7 +81,7 @@ const GestionPRCPage = () => {
     return matchSearch && matchEquip;
   });
 
-  // ── Modal PRC ──────────────────────────────────────────
+  
   const openModal = (item = null) => {
     setEditItem(item);
     setFormData(item
@@ -87,10 +122,10 @@ const GestionPRCPage = () => {
     catch (err) { alert(err.response?.data?.message || 'Erreur.'); }
   };
 
-  // ── Modal Stock ────────────────────────────────────────
+  
   const openStockModal = (item) => {
     setStockItem(item);
-    setStockForm({ mouvement: 'entree', quantite: '' });
+    setStockForm({ mouvement: 'entree', quantite: '', motif: '' });
     setStockError('');
     setShowStockModal(true);
   };
@@ -101,7 +136,11 @@ const GestionPRCPage = () => {
       return setStockError('Quantité invalide.');
     }
     try {
-      await prcAPI.updateStock(stockItem.id, { mouvement: stockForm.mouvement, quantite: parseInt(stockForm.quantite) });
+      await prcAPI.updateStock(stockItem.id, {
+        mouvement: stockForm.mouvement,
+        quantite: parseInt(stockForm.quantite),
+        motif: stockForm.motif || null,
+      });
       setShowStockModal(false);
       fetchAll();
     } catch (err) {
@@ -114,19 +153,63 @@ const GestionPRCPage = () => {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Pièces de Rechange (PRC)</h1>
           <p className="text-sm text-gray-500 mt-1">Gestion du catalogue et des stocks</p>
         </div>
-        <button onClick={() => openModal()}
-          className="bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 flex items-center gap-2">
-          + Ajouter une pièce
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setShowNotifs(v => !v)} className="relative px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 bg-white hover:bg-gray-50 flex items-center gap-2">
+            🔔 Consommations
+            {notifications.filter(n => !n.lu).length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                {notifications.filter(n => !n.lu).length}
+              </span>
+            )}
+          </button>
+          <button onClick={() => openModal()}
+            className="bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 flex items-center gap-2">
+            + Ajouter une pièce
+          </button>
+        </div>
       </div>
 
-      {/* KPI Cards */}
+      {showNotifs && (
+        <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
+          <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+            <span className="font-semibold text-gray-800">Consommations par les techniciens</span>
+            <span className="text-xs text-gray-400">{notifications.filter(n => !n.lu).length} non lue(s)</span>
+          </div>
+          {notifications.length === 0 ? (
+            <div className="px-5 py-6 text-center text-gray-400 text-sm">Aucune consommation enregistrée</div>
+          ) : (
+            <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+              {notifications.map(n => (
+                <div key={n.id} className={`flex items-center gap-4 px-5 py-3 ${n.lu ? 'opacity-60' : 'bg-orange-50'}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-800">
+                      <span className="font-mono text-orange-700">{n.code_prc}</span> — {n.designation}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {n.technicien} a utilisé <strong>{n.quantite}</strong> unité(s)
+                      {n.equipement && ` sur ${n.equipement}`}
+                      {' · '}stock restant : <strong className={parseInt(n.stock_apres) <= 2 ? 'text-red-600' : 'text-gray-700'}>{n.stock_apres}</strong>
+                    </div>
+                    <div className="text-xs text-gray-400">{fmtDate(n.created_at)}</div>
+                  </div>
+                  {!n.lu && (
+                    <button onClick={() => handleMarquerLue(n.id)}
+                      className="flex-shrink-0 text-xs text-blue-600 hover:underline">Marquer lu</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow p-4 border-l-4 border-blue-500">
           <p className="text-xs text-gray-500 uppercase">Références</p>
@@ -142,7 +225,7 @@ const GestionPRCPage = () => {
         </div>
       </div>
 
-      {/* Filters */}
+      
       <div className="bg-white rounded-xl shadow p-4 flex gap-4">
         <input
           type="text" placeholder="Rechercher par code ou désignation..."
@@ -160,7 +243,7 @@ const GestionPRCPage = () => {
         )}
       </div>
 
-      {/* Table */}
+      
       <div className="bg-white rounded-xl shadow overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-40 text-gray-400">Chargement...</div>
@@ -190,9 +273,11 @@ const GestionPRCPage = () => {
                   <td className="px-4 py-3 text-sm text-gray-700">
                     {(parseFloat(p.cout || 0) * parseInt(p.stock || 0)).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="px-4 py-3 text-sm flex gap-2">
+                  <td className="px-4 py-3 text-sm flex gap-2 flex-wrap">
                     <button onClick={() => openStockModal(p)}
                       className="text-green-600 hover:text-green-800 font-medium" title="Mouvement stock">📦</button>
+                    <button onClick={() => openHistModal(p)}
+                      className="text-indigo-600 hover:text-indigo-800 font-medium" title="Historique mouvements">📋</button>
                     <button onClick={() => openModal(p)}
                       className="text-blue-600 hover:text-blue-800 font-medium">✏️ Modifier</button>
                     <button onClick={() => handleDelete(p.id)}
@@ -205,7 +290,7 @@ const GestionPRCPage = () => {
         )}
       </div>
 
-      {/* Modal PRC */}
+      
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
@@ -271,7 +356,7 @@ const GestionPRCPage = () => {
         </div>
       )}
 
-      {/* Modal Stock */}
+      
       {showStockModal && stockItem && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
@@ -309,6 +394,13 @@ const GestionPRCPage = () => {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Quantité" autoFocus />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Motif</label>
+                <input type="text" value={stockForm.motif}
+                  onChange={e => setStockForm({...stockForm, motif: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Ex: Réception commande, Correction inventaire..." />
+              </div>
               <div className="flex justify-end gap-3 pt-1">
                 <button type="button" onClick={() => setShowStockModal(false)}
                   className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
@@ -320,6 +412,53 @@ const GestionPRCPage = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {showHistModal && histItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="px-6 py-4 border-b flex justify-between items-center flex-shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Historique des mouvements</h2>
+                <p className="text-sm text-gray-500">{histItem.code_prc} — {histItem.designation}</p>
+              </div>
+              <button onClick={() => setShowHistModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {histLoading ? (
+                <div className="flex items-center justify-center h-32 text-gray-400">Chargement...</div>
+              ) : mouvements.length === 0 ? (
+                <div className="flex items-center justify-center h-32 text-gray-400">Aucun mouvement enregistré</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      {['Date','Type','Qté','Stock avant','Stock après','Technicien / Responsable','Motif'].map(h => (
+                        <th key={h} className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {mouvements.map(m => (
+                      <tr key={m.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{fmtDate(m.created_at)}</td>
+                        <td className="px-4 py-2">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${m.type_mouvement === 'entree' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {m.type_mouvement === 'entree' ? '⬆ Entrée' : '⬇ Sortie'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 font-bold text-gray-800">{m.quantite}</td>
+                        <td className="px-4 py-2 text-gray-600">{m.stock_avant}</td>
+                        <td className="px-4 py-2 font-medium text-gray-800">{m.stock_apres}</td>
+                        <td className="px-4 py-2 text-gray-600">{m.technicien || '—'}</td>
+                        <td className="px-4 py-2 text-gray-500 max-w-[140px] truncate" title={m.motif}>{m.motif || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         </div>
       )}

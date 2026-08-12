@@ -1,12 +1,10 @@
-// ============================================================
-// USERS CONTROLLER
-// CRUD utilisateurs + Audit Log (Administrateur seulement)
-// ============================================================
+
+
 const bcrypt = require('bcryptjs');
 const db     = require('../config/db');
 const nodemailer = require('nodemailer');
 
-const ROLES_VALIDES = ['Administrateur', 'Responsable', 'Technicien', 'Lecteur'];
+const ROLES_VALIDES = ['Administrateur', 'Responsable', 'Technicien'];
 
 const validerMotDePasse = (mdp) => {
   if (!mdp || mdp.length < 8) return 'Mot de passe : minimum 8 caractères.';
@@ -151,7 +149,7 @@ const creerUtilisateur = async (req, res) => {
                     <li><strong>Email :</strong> ${email.toLowerCase().trim()}</li>
                     <li><strong>Mot de passe :</strong> ${mot_de_passe}</li>
                   </ul>
-                  <p>Nous vous conseillons de le conserver en toute securite.</p>
+                  <p>Pour votre securite, veuillez changer votre mot de passe apres votre premiere connexion depuis votre profil.</p>
                   <br>
                   <p>Cordialement,<br>L'equipe ELEONETECH</p>`
       });

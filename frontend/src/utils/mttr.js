@@ -1,7 +1,4 @@
-// ============================================================
-// CALCUL MTTR (Mean Time To Repair)
-// Partagé entre InterventionsStagingPage et MesInterventionsPage
-// ============================================================
+
 
 export const calculerMTTR = (dateOuv, heureOuv, dateClo, heureClo) => {
   if (!dateOuv || !heureOuv || !dateClo || !heureClo) return null;

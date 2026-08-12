@@ -1,9 +1,8 @@
-// ============================================================
-// INTERVENTIONS STAGING — Responsable / Admin
-// Validation + affichage MTTR (durée ouverture→clôture)
-// ============================================================
+
+
 import React, { useEffect, useState } from 'react';
 import { monitoringAPI } from '../../api';
+import { useAuth } from '../../context/AuthContext';
 import { exportToPDF } from '../../utils/exportPDF';
 import { calculerMTTR } from '../../utils/mttr';
 
@@ -16,6 +15,9 @@ const STATUT_COLOR = {
 const fmtDate = (v) => v ? new Date(v).toLocaleDateString('fr-FR') : '—';
 
 const InterventionsStagingPage = () => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Administrateur';
+
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtre, setFiltre]   = useState('En attente');
@@ -64,7 +66,7 @@ const InterventionsStagingPage = () => {
     finally { setActionId(null); }
   };
 
-  // "En cours" = ouverture sans clôture encore, en attente
+  
   const filtrees = filtre === 'Toutes' ? rows
     : filtre === 'En cours' ? rows.filter(r => r.action === 'Ouverture' && !r.date_cloture && r.statut === 'En attente')
     : rows.filter(r => r.statut === filtre);
@@ -78,7 +80,7 @@ const InterventionsStagingPage = () => {
 
   return (
     <div style={styles.page} id="staging-page">
-      {/* En-tête */}
+      
       <div style={styles.header}>
         <div>
           <h2 style={styles.title}>Interventions — Fiches terrain</h2>
@@ -97,7 +99,7 @@ const InterventionsStagingPage = () => {
 
       {erreur && <div style={styles.errorBox}>{erreur}</div>}
 
-      {/* Compteurs */}
+      
       <div style={styles.stats}>
         {[
           { label: 'En attente', key: 'En attente', icon: '⏳' },
@@ -113,7 +115,7 @@ const InterventionsStagingPage = () => {
         ))}
       </div>
 
-      {/* Filtres */}
+      
       <div style={styles.filtres}>
         {['En attente', 'En cours', 'Validee', 'Rejetee', 'Toutes'].map(f => (
           <button key={f} onClick={() => setFiltre(f)}
@@ -123,7 +125,7 @@ const InterventionsStagingPage = () => {
         ))}
       </div>
 
-      {/* Tableau */}
+      
       {loading ? (
         <div style={styles.centered}>Chargement...</div>
       ) : filtrees.length === 0 ? (
@@ -178,7 +180,7 @@ const InterventionsStagingPage = () => {
                       </span>
                     </td>
 
-                    {/* Ouverture */}
+                    
                     <td style={{ ...styles.td }}>
                       <div style={styles.timeCell}>
                         <span style={styles.timeDate}>{fmtDate(row.date_intervention)}</span>
@@ -186,7 +188,7 @@ const InterventionsStagingPage = () => {
                       </div>
                     </td>
 
-                    {/* Clôture */}
+                    
                     <td style={{ ...styles.td }}>
                       {row.date_cloture ? (
                         <div style={styles.timeCell}>
@@ -200,7 +202,7 @@ const InterventionsStagingPage = () => {
                       )}
                     </td>
 
-                    {/* MTTR */}
+                    
                     <td style={styles.td}>
                       {mttr ? (
                         <span style={styles.mttrBadge}>{mttr}</span>
@@ -209,12 +211,12 @@ const InterventionsStagingPage = () => {
                       )}
                     </td>
 
-                    {/* Description ouverture */}
+                    
                     <td style={{ ...styles.td, ...styles.tdDesc }}>
                       {row.description || <span style={styles.na}>—</span>}
                     </td>
 
-                    {/* Travaux clôture */}
+                    
                     <td style={{ ...styles.td, ...styles.tdDesc }}>
                       {row.description_cloture || <span style={styles.na}>—</span>}
                     </td>
@@ -226,7 +228,7 @@ const InterventionsStagingPage = () => {
                     </td>
 
                     <td style={styles.td}>
-                      {row.statut === 'En attente' ? (
+                      {!isAdmin && (row.statut === 'En attente' ? (
                         <div style={styles.actions}>
                           <button onClick={() => valider(row.id)} disabled={isActing} style={styles.btnValider}>
                             {isActing ? '...' : 'Valider'}
@@ -239,7 +241,8 @@ const InterventionsStagingPage = () => {
                         <button onClick={() => supprimer(row.id)} disabled={isActing} style={styles.btnSupprimer}>
                           {isActing ? '...' : 'Supprimer'}
                         </button>
-                      )}
+                      ))}
+                      {isAdmin && <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>}
                     </td>
                   </tr>
                 );

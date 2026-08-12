@@ -1,7 +1,5 @@
-// ============================================================
-// EQUIPEMENT CONTROLLER
-// CRUD operations for equipment management
-// ============================================================
+
+
 const db = require('../config/db');
 const QRCode = require('qrcode');
 const os = require('os');
@@ -9,23 +7,23 @@ const os = require('os');
 const getLocalIp = () => {
   const interfaces = os.networkInterfaces();
 
-  // Adaptateurs virtuels à ignorer (VirtualBox, VMware...)
+  
   const virtualKeywords = ['virtualbox', 'vmware', 'vethernet', 'loopback', 'pseudo', 'virtual', 'vbox'];
 
-  // 1er passage : préférer Wi-Fi / Ethernet réel, ignorer les virtuels
+  
   for (const name of Object.keys(interfaces)) {
     const lowerName = name.toLowerCase();
     if (virtualKeywords.some(k => lowerName.includes(k))) continue;
 
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        if (iface.address.startsWith('192.168.56.')) continue; // plage VirtualBox
+        if (iface.address.startsWith('192.168.56.')) continue; 
         return iface.address;
       }
     }
   }
 
-  // 2e passage : fallback — toute IPv4 non-interne hors VirtualBox
+  
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('192.168.56.')) {
@@ -37,7 +35,6 @@ const getLocalIp = () => {
   return 'localhost';
 };
 
-// ── Helper : enregistrer dans audit_log ──────────────────
 const logAction = async (idUser, action, tableCible = null, ip = null) => {
   try {
     await db.query(
@@ -49,7 +46,6 @@ const logAction = async (idUser, action, tableCible = null, ip = null) => {
   }
 };
 
-// ── GET /api/equipements ─────────────────────────────────
 const getAll = async (req, res) => {
   try {
     const equipements = await db.query(`
@@ -64,7 +60,6 @@ const getAll = async (req, res) => {
   }
 };
 
-// ── GET /api/equipements/:id ───────────────────────────────
 const getById = async (req, res) => {
   const { id } = req.params;
   
@@ -85,7 +80,6 @@ const getById = async (req, res) => {
   }
 };
 
-// ── GET /api/equipements/:id/intervention-qr ─────────────────────
 const genererQrIntervention = async (req, res) => {
   const { id } = req.params;
   const { baseUrl } = req.query;
@@ -103,7 +97,7 @@ const genererQrIntervention = async (req, res) => {
     const equipement = result.rows[0];
     let appUrl = baseUrl || process.env.APP_URL || req.get('origin') || 'http://localhost:3000';
     
-    // Remplacer localhost ou 127.0.0.1 par l'adresse IP locale du serveur
+    
     if (appUrl.includes('localhost') || appUrl.includes('127.0.0.1')) {
       const localIp = getLocalIp();
       appUrl = appUrl.replace('localhost', localIp).replace('127.0.0.1', localIp);
@@ -130,8 +124,6 @@ const genererQrIntervention = async (req, res) => {
   }
 };
 
-
-// ── POST /api/equipements ──────────────────────────────────
 const creer = async (req, res) => {
   const { nom, famille_equipement } = req.body;
   const ip = req.ip;
@@ -163,7 +155,6 @@ const creer = async (req, res) => {
   }
 };
 
-// ── PUT /api/equipements/:id ───────────────────────────────
 const modifier = async (req, res) => {
   const { id } = req.params;
   const { nom, famille_equipement } = req.body;
@@ -174,7 +165,7 @@ const modifier = async (req, res) => {
   }
   
   try {
-    // Vérifier si l'équipement existe
+    
     const existing = await db.query(
       'SELECT id FROM equipements WHERE id = $1',
       [id]
@@ -184,7 +175,7 @@ const modifier = async (req, res) => {
       return res.status(404).json({ message: 'Équipement non trouvé.' });
     }
     
-    // Vérifier si le nouveau nom est déjà utilisé par un autre équipement
+    
     const duplicate = await db.query(
       'SELECT id FROM equipements WHERE nom = $1 AND id != $2',
       [nom.trim(), id]
@@ -211,13 +202,12 @@ const modifier = async (req, res) => {
   }
 };
 
-// ── DELETE /api/equipements/:id ─────────────────────────────
 const supprimer = async (req, res) => {
   const { id } = req.params;
   const ip = req.ip;
   
   try {
-    // Vérifier si l'équipement existe
+    
     const existing = await db.query(
       'SELECT id FROM equipements WHERE id = $1',
       [id]
@@ -227,12 +217,12 @@ const supprimer = async (req, res) => {
       return res.status(404).json({ message: 'Équipement non trouvé.' });
     }
     
-    // Since interventions table doesn't have equipement_id column, 
-    // we can proceed with deletion
-    // Note: If you need to track equipment-intervention relationships,
-    // you would need to add an equipement_id column to interventions table
     
-    // Supprimer l'équipement
+    
+    
+    
+    
+    
     await db.query('DELETE FROM equipements WHERE id = $1', [id]);
     
     await logAction(req.user.id, 'DELETE_EQUIPEMENT', 'equipements', ip);

@@ -14,18 +14,27 @@ Tables :
 Usage : python transformation.py
 """
 
-import sys
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+import os
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from datetime import datetime
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
+
+_env_path = Path(__file__).parent.parent / "backend" / ".env"
+load_dotenv(dotenv_path=_env_path)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-DB_HOST = "localhost"
-DB_PORT = 5432
-DB_USER = "postgres"
-DB_PWD  = ""
-DB_NAME = "eleonetech_staging"
+DB_HOST = os.getenv("DB_HOST",         "localhost")
+DB_PORT = int(os.getenv("DB_PORT",     "5432"))
+DB_USER = os.getenv("DB_USER",         "postgres")
+DB_PWD  = os.getenv("DB_PASSWORD",     "")
+DB_NAME = os.getenv("DB_STAGING_NAME", "eleonetech_staging")
 
 MOIS_MAP = {
     'JANVIER':1,'FEVRIER':2,'FÉVRIER':2,'MARS':3,'AVRIL':4,
@@ -101,9 +110,10 @@ CREATE TABLE stg_clean_charges (
     id                SERIAL       PRIMARY KEY,
     matricule         VARCHAR(20),
     nom_prenom        TEXT,
-    numero_ot         VARCHAR(20)  NOT NULL UNIQUE,
+    numero_ot         VARCHAR(50)  NOT NULL,
+    UNIQUE (numero_ot, matricule),
     type_intervention VARCHAR(10)  NOT NULL DEFAULT 'AUTRE',
-    code_equipement   VARCHAR(50),
+    code_equipement   VARCHAR(100),
     date_debut        TIMESTAMP,
     annee             SMALLINT,
     mois_num          SMALLINT,
@@ -130,7 +140,7 @@ CREATE TABLE stg_clean_prc_mouvements (
 
 def get_engine():
     if DB_PWD:
-        url = f"postgresql+psycopg2://{DB_USER}:{DB_PWD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        url = f"postgresql+psycopg2://{DB_USER}:{quote_plus(DB_PWD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     else:
         url = f"postgresql+psycopg2://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     return create_engine(url, pool_pre_ping=True)
@@ -460,6 +470,17 @@ def transform_charges(engine):
         df['annee_mois'] = df['date_debut'].apply(
             lambda d: f"{d.year:04d}-{d.month:02d}" if pd.notna(d) else None)
 
+    # Nettoyer nom_prenom
+    if 'nom_prenom' in df.columns:
+        import re
+        # Supprimer chiffres en fin de nom  ("Gaith CHAMKHI 1" → "Gaith CHAMKHI")
+        df['nom_prenom'] = df['nom_prenom'].apply(
+            lambda x: re.sub(r'\s+\d+\s*$', '', str(x).strip()) if pd.notna(x) else None
+        )
+        # Supprimer les lignes "Service XXX" — ce sont des entités, pas des employés
+        df = df[~df['nom_prenom'].fillna('').str.strip().str.upper().str.startswith('SERVICE')]
+        df['nom_prenom'] = df['nom_prenom'].replace('', None)
+
     # Nettoyer code_equipement
     if 'code_equipement' in df.columns:
         df['code_equipement'] = df['code_equipement'].replace('', None)
@@ -470,7 +491,7 @@ def transform_charges(engine):
     df = df.dropna(subset=['numero_ot'])
     df = df[df['numero_ot'].astype(str).str.strip() != '']
     df['numero_ot'] = df['numero_ot'].astype(str).str.strip()
-    df = df.drop_duplicates(subset=['numero_ot'])
+    df = df.drop_duplicates(subset=['numero_ot', 'matricule'])
 
     cols = ['matricule','nom_prenom','numero_ot','type_intervention',
             'code_equipement','date_debut','annee','mois_num','annee_mois',

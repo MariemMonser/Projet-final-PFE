@@ -1,20 +1,11 @@
-// ============================================================
-// MIDDLEWARE AUTHENTIFICATION
-// Verifie le token JWT avant chaque route protegee
-// ============================================================
+
+
 const jwt = require('jsonwebtoken');
 const db  = require('../config/db');
 
-// Ensure JWT_SECRET is set
-if (!process.env.JWT_SECRET) {
-  process.env.JWT_SECRET = 'eleonetech_jwt_secret_key_2026';
-}
-
-// ── Verifier le token JWT ─────────────────────────────────
 const verifierToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
-  // Verifier que le header Authorization existe
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ message: 'Token manquant. Veuillez vous connecter.' });
   }
@@ -24,7 +15,19 @@ const verifierToken = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Verifier que l'utilisateur existe et est actif
+    if (!decoded.id) {
+      return res.status(401).json({ message: 'Token invalide.' });
+    }
+
+    // Vérifier si le token a été révoqué (déconnexion)
+    const blacklisted = await db.query(
+      'SELECT id FROM token_blacklist WHERE token_jti = $1',
+      [token]
+    );
+    if (blacklisted.rows.length > 0) {
+      return res.status(401).json({ message: 'Token invalide. Reconnectez-vous.' });
+    }
+
     const rows = await db.query(
       'SELECT id, prenom, nom, email, role, est_actif FROM utilisateurs WHERE id = $1',
       [decoded.id]
@@ -46,8 +49,6 @@ const verifierToken = async (req, res, next) => {
   }
 };
 
-// ── Verifier le role (RBAC) ───────────────────────────────
-// Usage: autoriser('Administrateur') ou autoriser('Administrateur','Responsable')
 const autoriser = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
@@ -59,4 +60,14 @@ const autoriser = (...roles) => {
   };
 };
 
-module.exports = { verifierToken, autoriser };
+// Purge les tokens expirés de la blacklist pour éviter la croissance infinie de la table.
+const purgerBlacklist = async () => {
+  try {
+    const r = await db.query('DELETE FROM token_blacklist WHERE expire_at < NOW()');
+    if (r.rowCount > 0) console.log(`🧹 token_blacklist: ${r.rowCount} token(s) expirés supprimés.`);
+  } catch (err) {
+    console.warn('Purge blacklist échouée:', err.message);
+  }
+};
+
+module.exports = { verifierToken, autoriser, purgerBlacklist };

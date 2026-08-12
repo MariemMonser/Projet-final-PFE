@@ -1,7 +1,5 @@
-// ============================================================
-// SCAN INTERVENTION PAGE
-// Flux : login → sous-équipement (si applicable) → sélection → form (ouverture) ou clôture
-// ============================================================
+
+
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { equipementsAPI, monitoringAPI, sousEquipAPI, prcAPI } from '../../api';
@@ -26,52 +24,54 @@ const ScanInterventionPage = () => {
   const { equipementId } = useParams();
   const { user, login }  = useAuth();
 
-  // ── Étape 1 : login ───────────────────────────────────────
+  
   const [loginForm, setLoginForm]       = useState({ email: '', password: '' });
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginErreur, setLoginErreur]   = useState('');
 
-  // ── Étape 2 : données ─────────────────────────────────────
+  
   const [equipement, setEquipement]     = useState(null);
   const [sousEquipements, setSousEquipements] = useState([]);
   const [planifiees, setPlanifiees]     = useState([]);
   const [ouvertes, setOuvertes]         = useState([]);
 
-  // ── Sous-équipement sélectionné ───────────────────────────
+  
   const [selectedSousEquip, setSelectedSousEquip] = useState(null);
 
-  // ── Étape 3 : form ouverture ──────────────────────────────
+  
   const [selectedIntervention, setSelected] = useState(null);
   const [modeLibre, setModeLibre]           = useState(false);
   const [action, setAction]                 = useState('Ouverture');
   const [typeIntervention, setType]         = useState('Curative');
   const [description, setDescription]      = useState('');
 
-  // ── Étape 4 : form clôture d'un staging ouvert ───────────
+  
   const [selectedOuvert, setSelectedOuvert] = useState(null);
   const [descCloture, setDescCloture]       = useState('');
 
   const [tachesSelectionnees, setTachesSelectionnees] = useState([]);
   const [prcDisponibles, setPrcDisponibles]           = useState([]);
-  const [prcSelectionnes, setPrcSelectionnes]         = useState({}); // { prcId: quantite }
+  const [prcSelectionnes, setPrcSelectionnes]         = useState({}); 
 
   const [saving, setSaving]   = useState(false);
   const [erreur, setErreur]   = useState('');
-  // login | sous-equip | selection | form | cloture | succes
+  
   const [etape, setEtape]     = useState('login');
 
-  const getTachesDisponibles = (equip) => {
-    if (!equip) return [];
-    const famille = (equip.famille_equipement || '').toLowerCase();
-    const nom     = (equip.nom || '').toLowerCase();
-    const text    = `${famille} ${nom}`;
+  const getTachesDisponibles = (equip, sousEquip) => {
+    const sousNom = (sousEquip?.nom || '').toLowerCase();
+    const famille = (equip?.famille_equipement || '').toLowerCase();
+    const nom     = (equip?.nom || '').toLowerCase();
+    const text    = `${famille} ${nom} ${sousNom}`;
 
-    if (text.includes('rooftop'))
-      return ['Changement courroies', 'Changement filtres'];
-    if (text.includes('compresseur'))
-      return ['Changement filtres', 'Changement purgeurs'];
-    if (text.includes('gerbeur'))
+    if (sousNom.includes('gerbeur') || text.includes('gerbeur'))
       return ['Graissage chaînes', 'Changement roues', 'Vérification et ajout eau batterie', 'Vérification galets'];
+    if (sousNom.includes('monte') || sousNom.includes('monte charge'))
+      return ['Graissage galets'];
+    if (text.includes('rooftop') || sousNom.includes('cms') || sousNom.includes('tht'))
+      return ['Changement courroies', 'Changement filtres'];
+    if (text.includes('compresseur') || sousNom.includes('drb') || sousNom.includes('csb'))
+      return ['Changement filtres', 'Changement purgeurs'];
     if (text.includes('mont') || text.includes('rideau'))
       return ['Graissage galets'];
     return [];
@@ -101,39 +101,49 @@ const ScanInterventionPage = () => {
   const isLoggedIn    = !!user;
   const technicienNom = `${user?.prenom || ''} ${user?.nom || ''}`.trim();
 
-  // Charger après login
+  
   useEffect(() => {
     if (!isLoggedIn) return;
     const charger = async () => {
       try {
-        const [equipRes, planRes, ouvertesRes, sousEquipRes, prcRes] = await Promise.all([
+        const [equipRes, planRes, ouvertesRes, sousEquipRes, prcRes] = await Promise.allSettled([
           equipementsAPI.getById(equipementId),
           monitoringAPI.getInterventionsPlanifieesParEquipement(equipementId),
           monitoringAPI.getMesOuvertesStaging(technicienNom, null),
           sousEquipAPI.getByEquipement(equipementId),
           prcAPI.getAll(),
         ]);
-        setEquipement(equipRes.data);
-        setPlanifiees(planRes.data || []);
-        const equipNom = equipRes.data?.nom || '';
-        setOuvertes((ouvertesRes.data || []).filter(o =>
-          !o.equipement || o.equipement.toLowerCase() === equipNom.toLowerCase()
-        ));
-        const sous = sousEquipRes.data || [];
+
+        const planData = planRes.status === 'fulfilled' ? planRes.value.data : null;
+        const equipInfo = equipRes.status === 'fulfilled'
+          ? equipRes.value.data
+          : planData?.equipement || null;
+        setEquipement(equipInfo);
+        const equipNom = equipInfo?.nom || '';
+
+        setPlanifiees(planData?.interventions || (Array.isArray(planData) ? planData : []));
+
+        if (ouvertesRes.status === 'fulfilled') {
+          setOuvertes((ouvertesRes.value.data || []).filter(o =>
+            !o.equipement || o.equipement.toLowerCase() === equipNom.toLowerCase()
+          ));
+        }
+
+        const sous = sousEquipRes.status === 'fulfilled' ? (sousEquipRes.value.data || []) : [];
         setSousEquipements(sous);
-        const allPrc = prcRes.data || [];
-        setPrcDisponibles(allPrc.filter(p => p.equipement_id === parseInt(equipementId) && p.stock > 0));
-        // S'il y a des sous-équipements → étape de sélection du sous-équipement
+
+        const allPrc = prcRes.status === 'fulfilled' ? (prcRes.value.data || []) : [];
+        setPrcDisponibles(allPrc.filter(p => p.stock > 0 && (!p.equipement_id || p.equipement_id === parseInt(equipementId))));
+
         setEtape(sous.length > 0 ? 'sous-equip' : 'selection');
       } catch {
-        setErreur('Impossible de charger les données.');
         setEtape('selection');
       }
     };
     charger();
   }, [isLoggedIn, equipementId]);
 
-  // ── Login ─────────────────────────────────────────────────
+  
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!loginForm.email.trim() || !loginForm.password)
@@ -149,13 +159,13 @@ const ScanInterventionPage = () => {
     }
   };
 
-  // ── Sélection sous-équipement ─────────────────────────────
+  
   const choisirSousEquip = (se) => {
     setSelectedSousEquip(se);
     setEtape('selection');
   };
 
-  // ── Sélection intervention planifiée → form ouverture ─────
+  
   const choisirIntervention = (interv) => {
     setSelected(interv);
     setAction(interv.statut === 'En cours' ? 'Cloture' : 'Ouverture');
@@ -175,14 +185,14 @@ const ScanInterventionPage = () => {
     setEtape('form');
   };
 
-  // ── Sélection d'une intervention ouverte → form clôture ───
+  
   const choisirCloture = (staging) => {
     setSelectedOuvert(staging);
     setDescCloture('');
     setEtape('cloture');
   };
 
-  // ── Soumission ouverture ──────────────────────────────────
+  
   const handleSubmitOuverture = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -201,7 +211,7 @@ const ScanInterventionPage = () => {
       }
       if (description.trim())
         parts.push(description.trim());
-      await monitoringAPI.addInterventionStaging({
+      const stagingRes = await monitoringAPI.addInterventionStaging({
         date_intervention: today,
         heure:             heureNow(),
         action,
@@ -213,9 +223,16 @@ const ScanInterventionPage = () => {
         intervention_id:   selectedIntervention?.id || null,
       });
       if (selectedPrcEntries.length > 0) {
+        const stagingId = stagingRes?.data?.id || null;
         await Promise.all(
           selectedPrcEntries.map(([id, qty]) =>
-            prcAPI.updateStock(id, { mouvement: 'sortie', quantite: qty })
+            prcAPI.updateStock(id, {
+              mouvement: 'sortie',
+              quantite: qty,
+              technicien: technicienNom,
+              equipement: equipement?.nom || null,
+              intervention_staging_id: stagingId,
+            })
           )
         );
       }
@@ -227,7 +244,7 @@ const ScanInterventionPage = () => {
     }
   };
 
-  // ── Soumission clôture ────────────────────────────────────
+  
   const handleSubmitCloture = async (e) => {
     e.preventDefault();
     if (!descCloture.trim()) return setErreur('La description des travaux est obligatoire.');
@@ -260,7 +277,7 @@ const ScanInterventionPage = () => {
     setErreur('');
   };
 
-  // ── LOGIN ─────────────────────────────────────────────────
+  
   if (!isLoggedIn || etape === 'login') {
     return (
       <div style={s.page}>
@@ -286,54 +303,54 @@ const ScanInterventionPage = () => {
     );
   }
 
-  // ── SÉLECTION SOUS-ÉQUIPEMENT ─────────────────────────────
+  
   if (etape === 'sous-equip') {
     return (
       <div style={s.page}>
         <div style={s.card}>
-          <p style={s.kicker}>ELEONETECH</p>
-          <h1 style={s.title}>Sous-équipement</h1>
+          <p style={s.kicker}>ELEONETECH · Intervention</p>
+          <h1 style={s.title}>Sur quel composant ?</h1>
           {equipement && (
             <div style={s.equipBadge}>
               <span style={s.equipId}>#{equipement.id}</span>
               <span style={s.equipNom}>{equipement.nom}</span>
             </div>
           )}
-          <p style={s.sectionTitle}>Sélectionnez le sous-équipement concerné :</p>
-          {sousEquipements.map(se => (
-            <button key={se.id} type="button" onClick={() => choisirSousEquip(se)} style={s.sousEquipCard}>
-              <div style={s.sousEquipRow}>
-                <div>
-                  <div style={s.sousEquipNom}>{se.nom}</div>
-                  {se.statut && (
-                    <div style={{
-                      ...s.sousEquipStatut,
-                      color: se.statut === 'actif' ? '#15803d'
-                           : se.statut === 'en_panne' ? '#b91c1c'
-                           : se.statut === 'en_maintenance' ? '#b45309'
-                           : '#64748b',
-                    }}>
-                      {se.statut === 'actif' ? '● Actif'
-                       : se.statut === 'en_panne' ? '● En panne'
-                       : se.statut === 'en_maintenance' ? '● En maintenance'
-                       : '● Hors service'}
-                    </div>
-                  )}
+          <p style={{ ...s.sectionTitle, marginBottom: 10 }}>
+            Choisissez le sous-équipement ({sousEquipements.length}) :
+          </p>
+          {sousEquipements.map((se, idx) => {
+            const couleur = se.statut === 'actif' ? '#15803d'
+                          : se.statut === 'en_panne' ? '#b91c1c'
+                          : se.statut === 'en_maintenance' ? '#b45309'
+                          : '#64748b';
+            const label = se.statut === 'actif' ? 'Actif'
+                        : se.statut === 'en_panne' ? 'En panne'
+                        : se.statut === 'en_maintenance' ? 'En maintenance'
+                        : 'Hors service';
+            return (
+              <button key={se.id} type="button" onClick={() => choisirSousEquip(se)} style={s.sousEquipTile}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ ...s.sousEquipBullet, background: couleur }}>{idx + 1}</div>
+                  <div style={{ flex: 1, textAlign: 'left' }}>
+                    <div style={s.sousEquipNom}>{se.nom}</div>
+                    <div style={{ color: couleur, fontSize: 12, fontWeight: 600, marginTop: 2 }}>● {label}</div>
+                  </div>
+                  <span style={{ color: '#94a3b8', fontSize: 22, fontWeight: 700 }}>›</span>
                 </div>
-                <span style={s.sousEquipArrow}>→</span>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
           <div style={s.divider}><span>ou</span></div>
           <button type="button" onClick={() => choisirSousEquip(null)} style={s.btnSecondary}>
-            Équipement principal (sans sous-équipement)
+            ⚙️ Équipement complet (sans sous-équipement)
           </button>
         </div>
       </div>
     );
   }
 
-  // ── SÉLECTION ─────────────────────────────────────────────
+  
   if (etape === 'selection') {
     return (
       <div style={s.page}>
@@ -347,7 +364,7 @@ const ScanInterventionPage = () => {
             </div>
           )}
 
-          {/* Badge sous-équipement sélectionné */}
+          
           {selectedSousEquip && (
             <div style={s.sousEquipSelectedBadge}>
               <span style={s.sousEquipSelectedLabel}>Sous-équipement :</span>
@@ -362,28 +379,35 @@ const ScanInterventionPage = () => {
 
           {erreur && <div style={s.errorBox}>{erreur}</div>}
 
-          {/* Interventions en cours (ouvertes, non clôturées) */}
+          
           {ouvertes.length > 0 && (
             <>
-              <p style={s.sectionTitle}>🔴 Interventions en cours (à clôturer)</p>
+              <p style={{ ...s.sectionTitle, color: '#b91c1c' }}>🔴 Intervention(s) en cours</p>
               {ouvertes.map(o => (
-                <button key={o.id} type="button" onClick={() => choisirCloture(o)} style={s.planCard}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <span style={s.badgeEnCours}>⚡ En cours</span>
-                      <div style={s.planDate}>Ouverte le {formatDateShort(o.date_intervention)} à {o.heure || '—'}</div>
-                      {o.sous_equipement && <div style={s.planSousEquip}>🔩 {o.sous_equipement}</div>}
-                      <div style={s.planTaches}>{o.type_intervention} — {o.description || 'sans description'}</div>
-                    </div>
-                    <span style={{ ...s.planAction, color: '#b45309' }}>🔒 Clôturer →</span>
+                <div key={o.id} style={s.ouvertCard}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={s.badgeEnCours}>⚡ En cours</span>
+                    {o.type_intervention && <span style={s.badgeTypeSmall}>{o.type_intervention}</span>}
                   </div>
-                </button>
+                  {o.sous_equipement && <div style={s.planSousEquip}>🔩 {o.sous_equipement}</div>}
+                  <div style={s.ouvertureHighlight}>
+                    <p style={s.ouvertureHighlightLabel}>Heure d'ouverture</p>
+                    <div style={s.ouvertureHighlightRow}>
+                      <span style={s.ouvertureHighlightDate}>📅 {formatDateShort(o.date_intervention)}</span>
+                      <span style={s.ouvertureHighlightTime}>🕐 {o.heure || '—'}</span>
+                    </div>
+                  </div>
+                  {o.description && <p style={{ ...s.planTaches, marginBottom: 8 }}>{o.description}</p>}
+                  <button type="button" onClick={() => choisirCloture(o)} style={s.btnCloture}>
+                    🔒 Clôturer cette intervention
+                  </button>
+                </div>
               ))}
               <div style={s.divider}><span>ou</span></div>
             </>
           )}
 
-          {/* Interventions planifiées */}
+
           {planifiees.length > 0 && (
             <>
               <p style={s.sectionTitle}>📅 Interventions planifiées</p>
@@ -391,20 +415,22 @@ const ScanInterventionPage = () => {
                 const det = parseDescription(interv.description);
                 const isEnCours = interv.statut === 'En cours';
                 return (
-                  <button key={interv.id} type="button" onClick={() => choisirIntervention(interv)} style={s.planCard}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <span style={isEnCours ? s.badgeEnCours : s.badgePlanifie}>
-                          {isEnCours ? '⚡ En cours' : '📅 Planifiée'}
-                        </span>
-                        <div style={s.planDate}>{formatDate(interv.date_intervention)}</div>
-                        {det.Taches && <div style={s.planTaches}>{det.Taches}</div>}
-                      </div>
-                      <span style={s.planAction}>
-                        {isEnCours ? '🔒 Clôturer →' : '🔓 Ouvrir →'}
+                  <div key={interv.id} style={s.planifieCard}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={isEnCours ? s.badgeEnCours : s.badgePlanifie}>
+                        {isEnCours ? '⚡ En cours' : '📅 Planifiée'}
                       </span>
                     </div>
-                  </button>
+                    <div style={s.planDate}>{formatDate(interv.date_intervention)}</div>
+                    {det.Taches && <div style={{ ...s.planTaches, marginBottom: 8 }}>Tâches : {det.Taches}</div>}
+                    <button
+                      type="button"
+                      onClick={() => choisirIntervention(interv)}
+                      style={isEnCours ? s.btnClotureBlue : s.btnOuvrir}
+                    >
+                      {isEnCours ? '🔒 Clôturer' : '🔓 Ouvrir cette intervention planifiée'}
+                    </button>
+                  </div>
                 );
               })}
               <div style={s.divider}><span>ou</span></div>
@@ -419,7 +445,7 @@ const ScanInterventionPage = () => {
     );
   }
 
-  // ── FORMULAIRE CLÔTURE d'un staging ouvert ────────────────
+  
   if (etape === 'cloture') {
     return (
       <div style={s.page}>
@@ -447,7 +473,7 @@ const ScanInterventionPage = () => {
             </div>
           )}
 
-          {/* Résumé de l'ouverture */}
+          
           <div style={s.ouvertureBox}>
             <p style={s.ouvertureLabel}>🔓 Ouverture</p>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -485,7 +511,7 @@ const ScanInterventionPage = () => {
     );
   }
 
-  // ── SUCCÈS ────────────────────────────────────────────────
+  
   if (etape === 'succes') {
     return (
       <div style={s.page}>
@@ -515,7 +541,7 @@ const ScanInterventionPage = () => {
     );
   }
 
-  // ── FORMULAIRE OUVERTURE (form) ───────────────────────────
+  
   return (
     <div style={s.page}>
       <form onSubmit={handleSubmitOuverture} style={s.card}>
@@ -535,13 +561,38 @@ const ScanInterventionPage = () => {
           </div>
         )}
 
-        {/* Badge sous-équipement dans le formulaire */}
-        {selectedSousEquip && (
+        
+        {selectedSousEquip ? (
           <div style={s.sousEquipSelectedBadge}>
             <span style={s.sousEquipSelectedLabel}>Sous-équipement :</span>
             <span style={s.sousEquipSelectedNom}>{selectedSousEquip.nom}</span>
+            {modeLibre && sousEquipements.length > 0 && (
+              <button type="button" onClick={() => setSelectedSousEquip(null)} style={s.changeSousEquipBtn}>
+                Changer
+              </button>
+            )}
           </div>
-        )}
+        ) : (modeLibre && sousEquipements.length > 0) ? (
+          <>
+            <label style={s.label}>Sur quel sous-équipement ? <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optionnel)</span></label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
+              {sousEquipements.map((se, idx) => {
+                const couleur = se.statut === 'actif' ? '#15803d'
+                              : se.statut === 'en_panne' ? '#b91c1c'
+                              : se.statut === 'en_maintenance' ? '#b45309' : '#64748b';
+                return (
+                  <button key={se.id} type="button" onClick={() => setSelectedSousEquip(se)} style={s.sousEquipTile}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ ...s.sousEquipBullet, background: couleur, width: 26, height: 26, fontSize: 12 }}>{idx + 1}</div>
+                      <span style={{ ...s.sousEquipNom, fontSize: 14 }}>{se.nom}</span>
+                      <span style={{ color: '#94a3b8', fontSize: 18, marginLeft: 'auto' }}>›</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
 
         {selectedIntervention && (
           <div style={s.linkedBadge}>
@@ -554,7 +605,7 @@ const ScanInterventionPage = () => {
 
         {erreur && <div style={s.errorBox}>{erreur}</div>}
 
-        {/* Action */}
+        
         <label style={s.label}>Action *</label>
         {selectedIntervention ? (
           <div style={action === 'Cloture' ? s.actionBadgeCloture : s.actionBadgeOuverture}>
@@ -570,7 +621,7 @@ const ScanInterventionPage = () => {
           </div>
         )}
 
-        {/* Type */}
+        
         {!selectedIntervention && (
           <>
             <label style={s.label}>Type d'intervention *</label>
@@ -585,7 +636,7 @@ const ScanInterventionPage = () => {
 
         {/* Tâches disponibles selon l'équipement */}
         {(() => {
-          const taches = getTachesDisponibles(equipement);
+          const taches = getTachesDisponibles(equipement, selectedSousEquip);
           if (!taches.length) return null;
           return (
             <>
@@ -609,7 +660,7 @@ const ScanInterventionPage = () => {
           );
         })()}
 
-        {/* PRC disponibles pour cet équipement */}
+        
         {prcDisponibles.length > 0 && (
           <>
             <label style={s.label}>Pièces de rechange (PRC) utilisées</label>
@@ -645,7 +696,7 @@ const ScanInterventionPage = () => {
           </>
         )}
 
-        {/* Description */}
+        
         <label style={s.label}>
           Description / Observations
           {action === 'Cloture' && <span style={s.required}> *</span>}
@@ -667,7 +718,6 @@ const ScanInterventionPage = () => {
   );
 };
 
-// ── Styles ────────────────────────────────────────────────────────
 const s = {
   page: {
     minHeight: '100vh',
@@ -726,17 +776,27 @@ const s = {
   },
   equipId:  { color: '#1e3a8a', fontSize: 20, fontWeight: 900 },
   equipNom: { color: '#1e293b', fontSize: 14, fontWeight: 700 },
-  // Sous-équipement sélection cards
+  
   sousEquipCard: {
     width: '100%', background: '#f8fafc', border: '1.5px solid #e2e8f0',
     borderRadius: 14, padding: '14px 16px', marginBottom: 10,
     cursor: 'pointer', textAlign: 'left',
   },
+  sousEquipTile: {
+    width: '100%', background: '#fff', border: '2px solid #e2e8f0',
+    borderRadius: 14, padding: '12px 14px', marginBottom: 8,
+    cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box',
+  },
+  sousEquipBullet: {
+    width: 32, height: 32, borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: '#fff', fontSize: 13, fontWeight: 900, flexShrink: 0,
+  },
   sousEquipRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   sousEquipNom: { color: '#0f172a', fontSize: 15, fontWeight: 700 },
   sousEquipStatut: { fontSize: 12, fontWeight: 600, marginTop: 3 },
   sousEquipArrow: { color: '#1d4ed8', fontSize: 18, fontWeight: 800 },
-  // Badge sous-équipement sélectionné
+  
   sousEquipSelectedBadge: {
     display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
     background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10,
@@ -779,6 +839,41 @@ const s = {
   planDate:   { color: '#334155', fontSize: 13, fontWeight: 700, marginTop: 6 },
   planTaches: { color: '#64748b', fontSize: 12, marginTop: 2, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   planAction: { color: '#1d4ed8', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', paddingLeft: 8 },
+  ouvertCard: {
+    background: '#fff7ed', border: '2px solid #fed7aa', borderRadius: 16,
+    padding: '14px 16px', marginBottom: 10, display: 'flex', flexDirection: 'column',
+  },
+  ouvertureHighlight: {
+    background: '#fff', border: '1.5px solid #fed7aa', borderRadius: 10,
+    padding: '10px 14px', margin: '8px 0',
+  },
+  ouvertureHighlightLabel: {
+    margin: '0 0 4px', color: '#92400e', fontSize: 11, fontWeight: 800,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  ouvertureHighlightRow: { display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' },
+  ouvertureHighlightDate: { color: '#78350f', fontSize: 14, fontWeight: 600 },
+  ouvertureHighlightTime: { color: '#b45309', fontSize: 22, fontWeight: 900 },
+  btnCloture: {
+    width: '100%', marginTop: 6, padding: '13px 16px', background: '#dc2626',
+    color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 800, cursor: 'pointer',
+  },
+  planifieCard: {
+    background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 16,
+    padding: '14px 16px', marginBottom: 10, display: 'flex', flexDirection: 'column',
+  },
+  btnOuvrir: {
+    width: '100%', marginTop: 6, padding: '13px 16px', background: '#16a34a',
+    color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 800, cursor: 'pointer',
+  },
+  btnClotureBlue: {
+    width: '100%', marginTop: 6, padding: '13px 16px', background: '#1d4ed8',
+    color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 800, cursor: 'pointer',
+  },
+  badgeTypeSmall: {
+    display: 'inline-block', padding: '2px 8px', background: '#fef3c7',
+    color: '#92400e', border: '1px solid #fde68a', borderRadius: 20, fontSize: 11, fontWeight: 700,
+  },
   divider: {
     display: 'flex', alignItems: 'center', margin: '12px 0 8px', gap: 10,
     color: '#94a3b8', fontSize: 12,
