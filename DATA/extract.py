@@ -1,23 +1,3 @@
-"""
-extract.py  —  ETL complet Eleonetech
-=========================================
-Lit tous les fichiers sources et produit des CSVs propres dans output/.
-
-Sources :
-  Situation_mensuelle/*.pdf             → situation_mensuelle.csv
-  Cout_materiel/*.pdf                   → cout_materiel.csv
-  Taux disponbilite/*.pdf               → taux_disponibilite.csv
-  energy/energie_eau.csv                → eau_journalier.csv
-  energy/energie_electricite.csv        → electricite_journalier.csv
-  energy/energie_photovoltaique.csv     → pv_journalier.csv
-  masters/prc.xlsx                      → pieces_rechange_catalogue.csv
-  masters/Mouvements par article PRC*.csv → pieces_rechange_mouvements.csv
-
-Usage :
-  pip install pdfplumber pandas openpyxl
-  python extract.py
-"""
-
 import io
 import sys
 import re
@@ -33,10 +13,6 @@ import pdfplumber
 import pandas as pd
 
 warnings.filterwarnings("ignore")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ═══════════════════════════════════════════════════════════════════════════════
 
 BASE_DIR   = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "output"
@@ -68,10 +44,6 @@ MOIS_FILENAME = {
 
 ZONES = {"BAT", "CMS", "MAG", "MEZ", "SEP", "THT", "UAP4", "UAP1", "UAP2", "UAP3"}
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# UTILITAIRES
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def fr_float(s):
     """Convertit un nombre au format français (virgule décimale, espaces) en float."""
@@ -156,12 +128,6 @@ def print_diagnostic():
         print(f"\n  ⚠  BASE_DIR = {BASE_DIR.resolve()}")
     print()
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 1. SITUATION MENSUELLE
-#    Source : Situation_mensuelle/Situation_mensuelle_*.pdf
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def extract_situation_mensuelle():
     print("[1/6] Situation mensuelle")
     RE_DATE   = re.compile(r"Du\s+(\w+)\s+Au\s+\w+\s+(\d{4})", re.IGNORECASE)
@@ -209,11 +175,6 @@ def extract_situation_mensuelle():
     write_csv(OUTPUT_DIR / "situation_mensuelle.csv", rows, headers)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 3. COÛT MATÉRIEL
-#    Source : Cout_materiel/Cout_materiel*.pdf
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def extract_cout_materiel():
     print("[2/6] Coût matériel")
     RE_DU = re.compile(r"Du\s+(\d{2}/\d{2}/\d{4})\s+Au\s+(\d{2}/\d{2}/\d{4})")
@@ -259,12 +220,6 @@ def extract_cout_materiel():
     headers = ["id", "date_debut", "date_fin", "annee", "mois", "entite",
                "zone", "type_intervention", "cout_tnd", "created_at"]
     write_csv(OUTPUT_DIR / "cout_materiel.csv", rows, headers)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4. TAUX DE DISPONIBILITÉ
-#    Source : Taux disponbilite/TauxDisponibilit*.pdf
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_taux_disponibilite():
     print("[3/6] Taux de disponibilité")
@@ -339,10 +294,6 @@ def extract_taux_disponibilite():
                "disponibilite_pct", "created_at"]
     write_csv(OUTPUT_DIR / "taux_disponibilite.csv", rows, headers)
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 5. ÉNERGIE  (3 CSV sources)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_energie():
     print("[4/6] Énergie")

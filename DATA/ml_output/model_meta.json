@@ -1,9 +1,9 @@
 {
-  "model_name": "GradientBoostingClassifier + CalibratedClassifierCV (isotonic)",
+  "model_name": "Random Forest",
   "version": "risk-only-1.0",
-  "auc": 0.6232,
-  "train_auc": 0.8608,
-  "threshold": 0.152,
+  "auc": 0.7008,
+  "train_auc": 0.9269,
+  "threshold": 0.348,
   "n_features": 30,
   "features": [
     "nb_cura_lag1",
@@ -39,8 +39,8 @@
   ],
   "n_train": 2398,
   "n_test": 600,
-  "trained_at": "2026-08-10T18:17:27.159112",
-  "scored_at": "2026-08-10T18:17:27.294020",
+  "trained_at": "2026-08-26T00:45:13.549416",
+  "scored_at": "2026-08-26T00:45:14.324079",
   "target": "nombre de curatifs du mois suivant > médiane historique de l’équipement",
   "risk_percentiles": {
     "modere": 66,
@@ -48,7 +48,7 @@
   },
   "stats": {
     "eleve": 94,
-    "modere": 102,
-    "faible": 429
+    "modere": 119,
+    "faible": 412
   }
 }

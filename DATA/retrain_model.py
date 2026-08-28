@@ -19,8 +19,11 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import roc_auc_score, precision_recall_curve
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score, precision_recall_curve, accuracy_score, precision_score, recall_score, f1_score
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 warnings.filterwarnings("ignore")
@@ -170,6 +173,57 @@ def load_champion():
         return None
 
 
+def build_models(y_train):
+    """Construit plusieurs modèles pour le benchmark."""
+    calibration_cv = min(3, int(np.bincount(y_train.astype(int), minlength=2).min()))
+    models = {
+        "Logistic Regression": Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)),
+        ]),
+        "Random Forest": RandomForestClassifier(
+            n_estimators=200,
+            max_depth=8,
+            class_weight="balanced",
+            random_state=42,
+            n_jobs=-1,
+        ),
+        "Gradient Boosting + Calibration": CalibratedClassifierCV(
+            GradientBoostingClassifier(
+                n_estimators=300,
+                max_depth=4,
+                learning_rate=0.05,
+                subsample=0.8,
+                min_samples_leaf=10,
+                random_state=42,
+            ),
+            method="isotonic",
+            cv=calibration_cv,
+        ),
+    }
+    return models
+
+
+def evaluate_model(name, model, X_train, X_test, y_train, y_test):
+    """Évalue un modèle et retourne les métriques."""
+    model.fit(X_train, y_train)
+    y_proba = model.predict_proba(X_test)[:, 1]
+    threshold = best_f1_threshold(y_test, y_proba)
+    y_pred = (y_proba >= threshold).astype(int)
+
+    auc = roc_auc_score(y_test, y_proba) if len(np.unique(y_test)) > 1 else 0.5
+    return {
+        "model": name,
+        "model_obj": model,
+        "auc": round(float(auc), 4),
+        "threshold_f1": round(float(threshold), 3),
+        "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
+        "precision": round(float(precision_score(y_test, y_pred, zero_division=0)), 4),
+        "recall": round(float(recall_score(y_test, y_pred, zero_division=0)), 4),
+        "f1": round(float(f1_score(y_test, y_pred, zero_division=0)), 4),
+    }
+
+
 # CRISP-DM — Modeling, Evaluation et Deployment
 def main():
     """Exécute le pipeline CRISP-DM du risque de panne."""
@@ -213,22 +267,28 @@ def main():
         return
 
     print(f"\n[2/4] Modeling — split temporel : train={len(train):,}, test={len(test):,}")
-    candidate = CalibratedClassifierCV(
-        GradientBoostingClassifier(
-            n_estimators=300, max_depth=4, learning_rate=0.05,
-            subsample=0.8, min_samples_leaf=10, random_state=42,
-        ),
-        method="isotonic", cv=calibration_cv,
-    )
-    candidate.fit(X_train, y_train)
-
-    # CRISP-DM — Evaluation
+    
+    # Benchmark de plusieurs modèles
+    models = build_models(y_train)
+    results = []
+    print("  Benchmark des modèles en cours...")
+    for name, model in models.items():
+        result = evaluate_model(name, model, X_train, X_test, y_train, y_test)
+        results.append(result)
+        print(f"    {name}: AUC={result['auc']:.4f} | F1={result['f1']:.4f} | Precision={result['precision']:.4f} | Recall={result['recall']:.4f}")
+    
+    # Sélection du meilleur modèle par AUC
+    best_result = max(results, key=lambda x: x["auc"])
+    candidate = best_result["model_obj"]
+    candidate_auc = best_result["auc"]
+    candidate_threshold = best_result["threshold_f1"]
+    candidate_name = best_result["model"]
+    
+    # Calculer train_auc pour le meilleur modèle
     train_proba = candidate.predict_proba(X_train)[:, 1]
-    test_proba = candidate.predict_proba(X_test)[:, 1]
     train_auc = float(roc_auc_score(y_train, train_proba))
-    candidate_auc = float(roc_auc_score(y_test, test_proba))
-    candidate_threshold = best_f1_threshold(y_test, test_proba)
-    print(f"\n[3/4] Evaluation — AUC train={train_auc:.4f} | AUC test={candidate_auc:.4f}")
+    
+    print(f"\n[3/4] Evaluation — Meilleur modèle: {candidate_name} (AUC train={train_auc:.4f} | AUC test={candidate_auc:.4f})")
 
     champion = load_champion()
     champion_auc = float(champion.get("auc", 0.0)) if champion else 0.0
@@ -236,7 +296,7 @@ def main():
     if accepted:
         active = {
             "model": candidate, "features": features, "threshold": candidate_threshold,
-            "model_name": "GradientBoostingClassifier + CalibratedClassifierCV (isotonic)",
+            "model_name": candidate_name,
             "auc": candidate_auc, "train_auc": train_auc, "n_train": len(train), "n_test": len(test),
             "trained_at": datetime.now().isoformat(),
         }

@@ -1,16 +1,3 @@
-"""
-compare_ml_models.py
-====================
-Compare plusieurs modeles ML avec la meme cible, les memes features et le
-meme split temporel que le pipeline de production.
-
-Objectif :
-  - rendre le choix du modele final defensable dans le rapport PFE
-  - produire DATA/ml_output/model_comparison.csv
-
-Usage : python compare_ml_models.py
-"""
-
 import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
@@ -38,6 +25,11 @@ from sklearn.metrics import (
     f1_score,
     accuracy_score,
 )
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 warnings.filterwarnings("ignore")
 
@@ -199,7 +191,47 @@ def optional_xgboost_model(y_train):
     )
 
 
-def build_models(y_train):
+def perform_eda(featured, feat_cols, output_dir):
+    """EDA minimal : corrélation, détection features corrélées, boxplots."""
+    X = featured[feat_cols]
+    
+    # Matrice de corrélation + heatmap
+    corr_matrix = X.corr()
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(corr_matrix, annot=False, cmap='coolwarm', center=0, 
+                square=True, cbar_kws={'shrink': 0.8})
+    plt.title('Matrice de corrélation des features')
+    plt.tight_layout()
+    heatmap_path = output_dir / "correlation_heatmap.png"
+    plt.savefig(heatmap_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    # Détection features trop corrélées (|r| > 0.85)
+    corr_abs = corr_matrix.abs()
+    upper_tri = corr_abs.where(np.triu(np.ones(corr_abs.shape), k=1).astype(bool))
+    to_drop = [col for col in upper_tri.columns if any(upper_tri[col] > 0.85)]
+    feat_cols_clean = [col for col in feat_cols if col not in to_drop]
+    
+    # Boxplots des features principales (max 12 pour lisibilité)
+    n_features = min(12, len(feat_cols))
+    fig, axes = plt.subplots(3, 4, figsize=(16, 12))
+    axes = axes.flatten()
+    for i, col in enumerate(feat_cols[:n_features]):
+        sns.boxplot(y=X[col], ax=axes[i])
+        axes[i].set_title(col, fontsize=9)
+        axes[i].tick_params(labelsize=8)
+    for i in range(n_features, len(axes)):
+        axes[i].set_visible(False)
+    plt.suptitle('Boxplots des features principales', y=1.02)
+    plt.tight_layout()
+    boxplot_path = output_dir / "boxplots_features.png"
+    plt.savefig(boxplot_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    return feat_cols_clean, len(to_drop)
+
+
+def build_models(y_train, feat_cols_clean):
     models = {
         "Logistic Regression": Pipeline([
             ("scaler", StandardScaler()),
@@ -240,7 +272,7 @@ def best_f1_threshold(y_true, y_proba):
     return float(thresholds[np.argmax(f1_scores[:-1])])
 
 
-def evaluate_model(name, model, X_train, X_test, y_train, y_test):
+def evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols):
     model.fit(X_train, y_train)
     y_proba = model.predict_proba(X_test)[:, 1]
     threshold = best_f1_threshold(y_test, y_proba)
@@ -255,6 +287,7 @@ def evaluate_model(name, model, X_train, X_test, y_train, y_test):
         "precision": round(float(precision_score(y_test, y_pred, zero_division=0)), 4),
         "recall": round(float(recall_score(y_test, y_pred, zero_division=0)), 4),
         "f1": round(float(f1_score(y_test, y_pred, zero_division=0)), 4),
+        "n_features": len(feat_cols),
     }
 
 
@@ -273,13 +306,21 @@ def main():
 
     # CRISP-DM — Data Understanding / Data Preparation
     featured, feat_cols = build_dataset(engine)
+    
+    # CRISP-DM — EDA : corrélation, détection features corrélées, boxplots
+    print("\n  EDA en cours...")
+    feat_cols_clean, n_dropped = perform_eda(featured, feat_cols, OUTPUT_DIR)
+    print(f"  Features initiales : {len(feat_cols)} | Éliminées (|r|>0.85) : {n_dropped} | Restantes : {len(feat_cols_clean)}")
+    
     # CRISP-DM — split global chronologique, jamais aléatoire.
     featured = featured.sort_values(["annee_mois", "equip_id"]).reset_index(drop=True)
     X = featured[feat_cols].values
+    X_clean = featured[feat_cols_clean].values
     y = featured["curatif_mois_suivant"].values
 
     split_idx = int(len(featured) * 0.8)
     X_train, X_test = X[:split_idx], X[split_idx:]
+    X_train_clean, X_test_clean = X_clean[:split_idx], X_clean[split_idx:]
     y_train, y_test = y[:split_idx], y[split_idx:]
 
     pos = int(y.sum())
@@ -291,7 +332,7 @@ def main():
 
     # CRISP-DM — Modeling / Evaluation
     rows = []
-    models = build_models(y_train)
+    models = build_models(y_train, feat_cols_clean)
     if "XGBoost" not in models:
         rows.append({
             "model": "XGBoost",
@@ -301,18 +342,23 @@ def main():
             "precision": np.nan,
             "recall": np.nan,
             "f1": np.nan,
+            "n_features": np.nan,
             "status": "non_installe",
         })
 
     for name, model in models.items():
         print(f"\n  Entrainement : {name}")
         try:
-            row = evaluate_model(name, model, X_train, X_test, y_train, y_test)
+            # Logistic Regression utilise features nettoyées, modèles tree-based toutes les features
+            if name == "Logistic Regression":
+                row = evaluate_model(name, model, X_train_clean, X_test_clean, y_train, y_test, feat_cols_clean)
+            else:
+                row = evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols)
             row["status"] = "ok"
             rows.append(row)
             print(
                 f"    AUC={row['auc']:.4f} | F1={row['f1']:.4f} | "
-                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f}"
+                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Features={row['n_features']}"
             )
         except Exception as e:
             rows.append({
@@ -323,6 +369,7 @@ def main():
                 "precision": np.nan,
                 "recall": np.nan,
                 "f1": np.nan,
+                "n_features": np.nan,
                 "status": f"erreur: {e}",
             })
             print(f"    ERREUR : {e}")
@@ -330,7 +377,6 @@ def main():
     results = pd.DataFrame(rows)
     results["n_train"] = len(y_train)
     results["n_test"] = len(y_test)
-    results["n_features"] = len(feat_cols)
     results["target"] = "curatifs mois suivant > mediane historique"
     results["generated_at"] = datetime.now().isoformat()
 
@@ -339,8 +385,9 @@ def main():
     # CRISP-DM — Deployment : artefact de benchmark du seul modèle de risque.
     results.to_csv(COMPARISON_PATH, index=False, encoding="utf-8-sig")
 
-    print("\n" + results[["model", "auc", "precision", "recall", "f1", "threshold_f1", "status"]].to_string(index=False))
+    print("\n" + results[["model", "auc", "precision", "recall", "f1", "threshold_f1", "n_features", "status"]].to_string(index=False))
     print(f"\n  Comparaison sauvegardee : {COMPARISON_PATH}")
+    print(f"  EDA sauvegardee : {OUTPUT_DIR / 'correlation_heatmap.png'}, {OUTPUT_DIR / 'boxplots_features.png'}")
     print("=" * 72)
 
 

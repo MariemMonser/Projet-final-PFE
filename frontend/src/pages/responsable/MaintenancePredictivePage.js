@@ -22,28 +22,15 @@ const EquipCard = ({ p, onPlanifier }) => {
   const cfg = RISQUE_CONFIG[p.risque] || RISQUE_CONFIG['Faible'];
   const pct = Math.round(p.proba_panne * 100);
   return (
-    <div className={`rounded-xl border ${cfg.border} bg-white p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow`}>
-      <div className="flex-shrink-0 w-14 text-center">
-        <div className={`text-xl font-bold ${cfg.text}`}>{pct}%</div>
-        <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden mt-1">
-          <div className={`h-1.5 rounded-full ${cfg.bar}`} style={{ width: `${pct}%` }} />
-        </div>
-        <div className="text-xs text-gray-400 mt-0.5">panne</div>
+    <div className={`rounded-xl border ${cfg.border} bg-white p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow`}>
+      <div className="flex-shrink-0 w-12 text-center">
+        <div className={`text-lg font-bold ${cfg.text}`}>{pct}%</div>
+        <div className="text-xs text-gray-400">panne</div>
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="font-mono text-xs text-gray-400">{p.code_equipement}</div>
-        <div className="font-semibold text-gray-800 text-sm truncate mt-0.5" title={p.libelle}>
-          {p.libelle || '—'}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-gray-500">
-          <span className={p.nb_cura_roll3 > 0 ? 'text-red-600 font-medium' : ''}>
-            {p.nb_cura_roll3} curatif{p.nb_cura_roll3 !== 1 ? 's' : ''} / 3 mois
-          </span>
-          {p.mois_depuis_cura !== null && !isNaN(p.mois_depuis_cura) && (
-            <span className="text-gray-400">· dernier il y a {Math.round(p.mois_depuis_cura)} mois</span>
-          )}
-        </div>
+        <div className="font-mono text-sm text-gray-700">{p.code_equipement}</div>
+        <div className={`text-xs font-medium mt-0.5 ${cfg.text}`}>{cfg.icon} {p.risque}</div>
       </div>
 
       {p.risque !== 'Faible' && (
@@ -211,17 +198,8 @@ const MaintenancePredictivePage = () => {
           <p className="text-sm text-gray-500 mt-1">
             Prédictions du modèle ML — risque de panne par équipement pour le mois prochain
           </p>
-          {modelInfo && (
-            <p className="text-xs text-gray-400 mt-0.5">
-              Modèle : {modelInfo.model_name} &nbsp;|&nbsp; AUC : {modelInfo.auc}
-              {modelInfo.trained_at && ` | Entraîné le ${new Date(modelInfo.trained_at).toLocaleDateString('fr-FR')}`}
-            </p>
-          )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-full font-medium">
-            Catégories : percentiles 66 / 85
-          </span>
           <button
             onClick={handleRetrain}
             disabled={retraining}
@@ -245,30 +223,6 @@ const MaintenancePredictivePage = () => {
             <StatCard label="Risque modéré — à surveiller"      value={stats.modere} color="bg-orange-50" icon="🟠" />
             <StatCard label="Risque faible — OK"                value={stats.faible} color="bg-green-50"  icon="🟢" />
             <StatCard label="Équipements analysés"              value={stats.total}  color="bg-blue-50"   icon="⚙️" />
-          </div>
-
-          {/* Risk distribution bar */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">Répartition du risque</span>
-              <span className="text-xs text-gray-400">{stats.total} équipements analysés</span>
-            </div>
-            <div className="flex rounded-full overflow-hidden h-5 gap-px">
-              {elevePct  > 0 && <div className="bg-red-500    flex items-center justify-center text-white text-xs font-bold" style={{ width: `${elevePct}%`  }}>{elevePct  >= 8 ? `${elevePct}%`  : ''}</div>}
-              {moderePct > 0 && <div className="bg-orange-400 flex items-center justify-center text-white text-xs font-bold" style={{ width: `${moderePct}%` }}>{moderePct >= 8 ? `${moderePct}%` : ''}</div>}
-              {faiblePct > 0 && <div className="bg-green-500  flex items-center justify-center text-white text-xs font-bold" style={{ width: `${faiblePct}%` }}>{faiblePct >= 8 ? `${faiblePct}%` : ''}</div>}
-            </div>
-            <div className="flex gap-5 mt-2">
-              <span className="text-xs flex items-center gap-1.5 text-red-600">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> Élevé {elevePct}%
-              </span>
-              <span className="text-xs flex items-center gap-1.5 text-orange-600">
-                <span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" /> Modéré {moderePct}%
-              </span>
-              <span className="text-xs flex items-center gap-1.5 text-green-600">
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" /> Faible {faiblePct}%
-              </span>
-            </div>
           </div>
         </>
       )}

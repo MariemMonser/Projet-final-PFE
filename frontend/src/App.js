@@ -36,16 +36,6 @@ import ScanInterventionPage    from './pages/technicien/ScanInterventionPage';
 
 import InterventionPubliquePage from './pages/InterventionPubliquePage';
 
-const Dashboard = ({ titre, icone = '🔧' }) => (
-  <div className="p-8 flex items-center justify-center min-h-full">
-    <div className="text-center">
-      <div className="text-7xl mb-4">{icone}</div>
-      <h2 className="text-2xl font-bold text-gray-800">{titre}</h2>
-      <p className="text-gray-500 mt-2 text-sm">Module en cours de developpement – Sprint suivant</p>
-    </div>
-  </div>
-);
-
 const NonAutorise = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-50">
     <div className="text-center">

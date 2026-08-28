@@ -1,5 +1,3 @@
-
-
 const express = require('express');
 const router  = express.Router();
 const { verifierToken, autoriser } = require('../middleware/auth.middleware');

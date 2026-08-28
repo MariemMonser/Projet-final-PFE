@@ -1,5 +1,5 @@
-﻿model,auc,threshold_f1,accuracy,precision,recall,f1,status,n_train,n_test,n_features,target,generated_at
-XGBoost,0.7763,0.547,0.755,0.4794,0.6691,0.5586,ok,2398,600,30,curatifs mois suivant > mediane historique,2026-07-09T13:10:31.033006
-Random Forest,0.7672,0.466,0.68,0.4,0.7626,0.5248,ok,2398,600,30,curatifs mois suivant > mediane historique,2026-07-09T13:10:31.033006
-Gradient Boosting + Calibration,0.7588,0.269,0.7,0.4208,0.7842,0.5477,ok,2398,600,30,curatifs mois suivant > mediane historique,2026-07-09T13:10:31.033006
-Logistic Regression,0.6885,0.486,0.6817,0.3992,0.741,0.5189,ok,2398,600,30,curatifs mois suivant > mediane historique,2026-07-09T13:10:31.033006
+﻿model,auc,threshold_f1,accuracy,precision,recall,f1,n_features,status,n_train,n_test,target,generated_at
+Random Forest,0.7008,0.348,0.5817,0.4083,0.9489,0.5709,30,ok,2398,600,curatifs mois suivant > mediane historique,2026-08-26T00:07:43.950500
+Logistic Regression,0.6478,0.417,0.5567,0.3929,0.9375,0.5537,29,ok,2398,600,curatifs mois suivant > mediane historique,2026-08-26T00:07:43.950500
+Gradient Boosting + Calibration,0.6232,0.152,0.5117,0.3667,0.9148,0.5236,30,ok,2398,600,curatifs mois suivant > mediane historique,2026-08-26T00:07:43.950500
+XGBoost,0.6159,0.205,0.515,0.3666,0.8977,0.5206,30,ok,2398,600,curatifs mois suivant > mediane historique,2026-08-26T00:07:43.950500

@@ -1,9 +1,6 @@
-
-
 const express = require('express');
 const router  = express.Router();
 const { verifierToken } = require('../middleware/auth.middleware');
-const { loginRateLimit } = require('../middleware/rateLimit.middleware');
 const {
   login,
   logout,
@@ -13,7 +10,7 @@ const {
   changePassword,
 } = require('../controllers/auth.controller');
 
-router.post('/login', loginRateLimit, login);
+router.post('/login', login);
 
 router.post('/logout', verifierToken, logout);
 
