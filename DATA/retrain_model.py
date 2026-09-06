@@ -1,9 +1,3 @@
-"""Réentraînement du modèle de risque de panne par équipement.
-
-À lancer après chaque cycle ETL complet. Les seules sorties ML sont le modèle,
-les prédictions de risque et ses métadonnées.
-"""
-
 import io
 import json
 import os
@@ -25,7 +19,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score, precision_recall_curve, accuracy_score, precision_score, recall_score, f1_score
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+# Fix encoding for both script and notebook environments
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 warnings.filterwarnings("ignore")
 
 load_dotenv(Path(__file__).parent.parent / "backend" / ".env")
@@ -42,17 +38,16 @@ PREDS_PATH = OUTPUT_DIR / "predictions_risque.csv"
 META_PATH = OUTPUT_DIR / "model_meta.json"
 
 FEATURE_COLS = [
-    "nb_cura_lag1", "nb_cura_lag2", "nb_cura_lag3",
-    "nb_prev_lag1", "nb_prev_lag2", "nb_prev_lag3",
-    "duree_cura_lag1", "duree_cura_lag2", "duree_cura_lag3",
-    "nb_cura_roll3", "nb_prev_roll3", "duree_cura_roll3",
-    "mois_depuis_cura", "mois_depuis_prev", "ratio_cura_3m",
-    "nb_ot_total", "nb_curatif", "nb_preventif",
-    "duree_cura_h", "duree_prev_h", "annee", "mois_num",
-    "mtbf_h_lag1", "mtbf_h_roll3",
-    "disponibilite_pct_lag1", "disponibilite_pct_roll3",
-    "nb_arrets_lag1", "nb_arrets_roll3",
-    "t_arret_lag1", "t_arret_roll3",
+    # Features curatives (8)
+    "nb_cura_roll3", "duree_cura_h", "nb_curatif", "duree_cura_roll3",
+    "nb_cura_lag1", "duree_cura_lag1", "nb_cura_lag2", "nb_cura_lag3",
+    # Features préventives (4)
+    "nb_prev_lag1", "duree_prev_h", "nb_prev_roll3", "nb_preventif",
+    # Features de fiabilité (3)
+    "disponibilite_pct_roll3", "mtbf_h_roll3", "disponibilite_pct_lag1",
+    # Features temporelles et de ratio (6)
+    "mois_num", "ratio_cura_3m", "mois_depuis_cura", "mois_depuis_prev",
+    "annee", "nb_ot_total",
 ]
 
 
@@ -182,19 +177,19 @@ def build_models(y_train):
             ("model", LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)),
         ]),
         "Random Forest": RandomForestClassifier(
-            n_estimators=200,
-            max_depth=8,
+            n_estimators=100,
+            max_depth=6,
             class_weight="balanced",
             random_state=42,
             n_jobs=-1,
         ),
         "Gradient Boosting + Calibration": CalibratedClassifierCV(
             GradientBoostingClassifier(
-                n_estimators=300,
-                max_depth=4,
-                learning_rate=0.05,
+                n_estimators=100,
+                max_depth=3,
+                learning_rate=0.1,
                 subsample=0.8,
-                min_samples_leaf=10,
+                min_samples_leaf=20,
                 random_state=42,
             ),
             method="isotonic",

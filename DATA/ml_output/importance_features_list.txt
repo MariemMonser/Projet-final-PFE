@@ -1,0 +1,23 @@
+Features sélectionnées par importance (Random Forest):
+1. nb_cura_roll4: 0.1370
+2. duree_cura_h: 0.0916
+3. nb_curatif: 0.0876
+4. mois_num: 0.0828
+5. nb_cura_lag1: 0.0795
+6. nb_ot_total: 0.0746
+7. duree_cura_roll4: 0.0742
+8. nb_cura_lag2: 0.0628
+9. duree_cura_lag1: 0.0610
+10. nb_cura_lag3: 0.0567
+11. duree_cura_lag3: 0.0507
+12. duree_cura_lag2: 0.0503
+13. nb_prev_roll4: 0.0149
+14. nb_prev_lag1: 0.0142
+15. mois_depuis_cura: 0.0139
+16. duree_prev_h: 0.0126
+17. ratio_cura_4m: 0.0089
+18. nb_preventif: 0.0084
+19. nb_prev_lag2: 0.0080
+20. nb_prev_lag3: 0.0059
+21. mois_depuis_prev: 0.0045
+22. annee: 0.0000
