@@ -2,6 +2,7 @@ import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 import os
+import hashlib
 import warnings
 import numpy as np
 import pandas as pd
@@ -24,7 +25,9 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
     accuracy_score,
+    confusion_matrix,
 )
+from retrain_model import build_dataset as build_deployment_dataset
 
 import matplotlib
 matplotlib.use('Agg')
@@ -130,7 +133,7 @@ def rolling_features(g):
     return g
 
 
-def build_dataset(engine):
+def build_dataset_legacy(engine):
     df_raw = dw_query(engine, """
         SELECT fi.equip_id,
                t.annee_mois,
@@ -194,7 +197,21 @@ def build_dataset(engine):
 
     feat_cols = [c for c in FEATURE_COLS if c in featured.columns]
     featured[feat_cols] = featured[feat_cols].fillna(0)
-    return featured, feat_cols
+    return featured.reset_index(drop=True), feat_cols
+
+
+def build_dataset(engine):
+    """Benchmark et production utilisent exactement la même préparation."""
+    _, training, _, features = build_deployment_dataset(engine)
+    return training.reset_index(drop=True), features
+
+
+def data_fingerprint(featured, feat_cols):
+    """Empreinte des donnees pour detecter les changements entre executions."""
+    payload = featured[["equip_id", "annee_mois"] + feat_cols + ["curatif_mois_suivant"]]
+    payload = payload.sort_values(["equip_id", "annee_mois"])
+    raw = pd.util.hash_pandas_object(payload, index=False).values.tobytes()
+    return hashlib.sha256(raw).hexdigest()[:16]
 
 
 def select_features_by_importance(X_train, y_train, feat_cols, n_features=18):
@@ -301,13 +318,31 @@ def best_f1_threshold(y_true, y_proba):
     return float(thresholds[np.argmax(f1_scores[:-1])])
 
 
-def evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols):
+def evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols, output_dir=None):
     model.fit(X_train, y_train)
     y_proba = model.predict_proba(X_test)[:, 1]
     threshold = best_f1_threshold(y_test, y_proba)
     y_pred = (y_proba >= threshold).astype(int)
 
     auc = roc_auc_score(y_test, y_proba) if len(np.unique(y_test)) > 1 else 0.5
+    accuracy = accuracy_score(y_test, y_pred)
+    
+    # Calculate confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    
+    # Generate and save confusion matrix plot if output_dir is provided
+    if output_dir is not None:
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                    xticklabels=['Faible risque', 'Élevé risque'],
+                    yticklabels=['Faible risque', 'Élevé risque'])
+        plt.title(f'Matrice de Confusion - {name}')
+        plt.ylabel('Vérité terrain')
+        plt.xlabel('Prédiction')
+        plt.tight_layout()
+        cm_path = output_dir / f"confusion_matrix_{name.replace(' ', '_').lower()}.png"
+        plt.savefig(cm_path, dpi=150, bbox_inches='tight')
+        plt.close()
     
     # Extract feature importance for tree-based models
     feature_importance = None
@@ -324,12 +359,13 @@ def evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols):
         "model": name,
         "auc": round(float(auc), 4),
         "threshold_f1": round(float(threshold), 3),
-        "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
+        "accuracy": round(float(accuracy), 4),
         "precision": round(float(precision_score(y_test, y_pred, zero_division=0)), 4),
         "recall": round(float(recall_score(y_test, y_pred, zero_division=0)), 4),
         "f1": round(float(f1_score(y_test, y_pred, zero_division=0)), 4),
         "n_features": len(feat_cols),
         "feature_importance": feature_importance,
+        "confusion_matrix": cm.tolist(),  # Store as list for JSON serialization
     }
 
 
@@ -349,6 +385,10 @@ def main():
     # CRISP-DM — Data Understanding / Data Preparation
     featured, feat_cols = build_dataset(engine)
     
+    # Check data fingerprint to detect changes between executions
+    fp = data_fingerprint(featured, feat_cols)
+    print(f"[DEBUG] fingerprint données = {fp} | n_lignes={len(featured)} | n_positifs={int(featured['curatif_mois_suivant'].sum())}")
+    
     # CRISP-DM — EDA : corrélation avec target, détection features corrélées, boxplots
     print("\n  EDA en cours...")
     feat_cols_clean, n_dropped, target_corr = perform_eda(featured, feat_cols, OUTPUT_DIR)
@@ -366,7 +406,9 @@ def main():
     y_train, y_test = y[:split_idx], y[split_idx:]
     
     # Prepare reduced feature set (manual)
-    reduced_feat_cols = [col for col in REDUCED_FEATURE_COLS if col in featured.columns]
+    # Le benchmark partagé ne retient que les variables réellement préparées
+    # par le pipeline de production (et donc déjà imputées).
+    reduced_feat_cols = [col for col in REDUCED_FEATURE_COLS if col in feat_cols]
     print(f"  Features réduites (manuelles) : {len(reduced_feat_cols)}")
     
     # Prepare feature importance-based selection
@@ -402,15 +444,15 @@ def main():
         try:
             # Logistic Regression utilise features nettoyées, modèles tree-based toutes les features
             if name == "Logistic Regression":
-                row = evaluate_model(name, model, X_train_clean, X_test_clean, y_train, y_test, feat_cols_clean)
+                row = evaluate_model(name, model, X_train_clean, X_test_clean, y_train, y_test, feat_cols_clean, OUTPUT_DIR)
             else:
-                row = evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols)
+                row = evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols, OUTPUT_DIR)
             row["status"] = "ok"
             row["feature_set"] = "original"
             rows.append(row)
             print(
                 f"    AUC={row['auc']:.4f} | F1={row['f1']:.4f} | "
-                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Features={row['n_features']}"
+                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Accuracy={row['accuracy']:.4f} | Features={row['n_features']}"
             )
         except Exception as e:
             rows.append({
@@ -424,6 +466,7 @@ def main():
                 "n_features": np.nan,
                 "status": f"erreur: {e}",
                 "feature_set": "original",
+                "confusion_matrix": None,
             })
             print(f"    ERREUR : {e}")
     
@@ -433,15 +476,15 @@ def main():
         print(f"\n  Entrainement : {name} (reduced)")
         try:
             if name == "Logistic Regression":
-                row = evaluate_model(name, model, X_train_reduced, X_test_reduced, y_train, y_test, reduced_feat_cols)
+                row = evaluate_model(name, model, X_train_reduced, X_test_reduced, y_train, y_test, reduced_feat_cols, OUTPUT_DIR)
             else:
-                row = evaluate_model(name, model, X_train_reduced, X_test_reduced, y_train, y_test, reduced_feat_cols)
+                row = evaluate_model(name, model, X_train_reduced, X_test_reduced, y_train, y_test, reduced_feat_cols, OUTPUT_DIR)
             row["status"] = "ok"
             row["feature_set"] = "reduced"
             rows.append(row)
             print(
                 f"    AUC={row['auc']:.4f} | F1={row['f1']:.4f} | "
-                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Features={row['n_features']}"
+                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Accuracy={row['accuracy']:.4f} | Features={row['n_features']}"
             )
         except Exception as e:
             rows.append({
@@ -455,6 +498,7 @@ def main():
                 "n_features": np.nan,
                 "status": f"erreur: {e}",
                 "feature_set": "reduced",
+                "confusion_matrix": None,
             })
             print(f"    ERREUR : {e}")
     
@@ -464,15 +508,15 @@ def main():
         print(f"\n  Entrainement : {name} (importance)")
         try:
             if name == "Logistic Regression":
-                row = evaluate_model(name, model, X_train_importance, X_test_importance, y_train, y_test, importance_feat_cols)
+                row = evaluate_model(name, model, X_train_importance, X_test_importance, y_train, y_test, importance_feat_cols, OUTPUT_DIR)
             else:
-                row = evaluate_model(name, model, X_train_importance, X_test_importance, y_train, y_test, importance_feat_cols)
+                row = evaluate_model(name, model, X_train_importance, X_test_importance, y_train, y_test, importance_feat_cols, OUTPUT_DIR)
             row["status"] = "ok"
             row["feature_set"] = "importance"
             rows.append(row)
             print(
                 f"    AUC={row['auc']:.4f} | F1={row['f1']:.4f} | "
-                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Features={row['n_features']}"
+                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Accuracy={row['accuracy']:.4f} | Features={row['n_features']}"
             )
         except Exception as e:
             rows.append({
@@ -486,6 +530,7 @@ def main():
                 "n_features": np.nan,
                 "status": f"erreur: {e}",
                 "feature_set": "importance",
+                "confusion_matrix": None,
             })
             print(f"    ERREUR : {e}")
 
@@ -526,7 +571,7 @@ def main():
     print("\n  === Feature Importance ===")
     importance_data = []
     for _, row in results.iterrows():
-        if row["feature_importance"] is not None:
+        if isinstance(row["feature_importance"], dict):
             for feat, imp in row["feature_importance"].items():
                 importance_data.append({
                     "model": row["model"],
@@ -551,7 +596,7 @@ def main():
     # CRISP-DM — Deployment : artefact de benchmark du seul modèle de risque.
     results.to_csv(COMPARISON_PATH, index=False, encoding="utf-8-sig")
 
-    print("\n" + results[["model", "feature_set", "auc", "precision", "recall", "f1", "threshold_f1", "n_features", "status"]].to_string(index=False))
+    print("\n" + results[["model", "feature_set", "auc", "accuracy", "precision", "recall", "f1", "threshold_f1", "n_features", "status"]].to_string(index=False))
     
     # Save importance-based feature list
     importance_list_path = OUTPUT_DIR / "importance_features_list.txt"
@@ -562,6 +607,7 @@ def main():
     print(f"\n  Liste features importance sauvegardée : {importance_list_path}")
     print(f"\n  Comparaison sauvegardee : {COMPARISON_PATH}")
     print(f"  EDA sauvegardee : {OUTPUT_DIR / 'correlation_heatmap.png'}, {OUTPUT_DIR / 'boxplots_features.png'}")
+    print(f"  Matrices de confusion sauvegardees dans : {OUTPUT_DIR}")
     print("=" * 72)
 
 

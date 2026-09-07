@@ -487,6 +487,23 @@ def transform_charges(engine):
         df['code_equipement'] = df['code_equipement'].apply(
             lambda x: None if pd.isna(x) or str(x).lower() in ('nan','none','') else str(x).strip())
 
+        # Corrections validées pour les codes fusionnés au texte dans certains PDF.
+        # Le staging est rechargé à chaque pipeline : ce mapping doit donc être
+        # appliqué ici plutôt que par une mise à jour SQL ponctuelle.
+        equipement_manuel_par_ot = {
+            '2025096688': 'F42215',
+            '2025096690': 'F41852',
+            '2025096691': 'F42298',
+            '2026112965': 'VAL-I-26',
+        }
+        mask_sans_equipement = df['code_equipement'].isna()
+        df.loc[mask_sans_equipement, 'code_equipement'] = (
+            df.loc[mask_sans_equipement, 'numero_ot']
+              .astype(str)
+              .str.strip()
+              .map(equipement_manuel_par_ot)
+        )
+
     # Qualité — numero_ot obligatoire et unique
     df = df.dropna(subset=['numero_ot'])
     df = df[df['numero_ot'].astype(str).str.strip() != '']

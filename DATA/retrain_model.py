@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import os
@@ -16,8 +17,9 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
+from sklearn.base import clone
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import roc_auc_score, precision_recall_curve, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 # Fix encoding for both script and notebook environments
 if hasattr(sys.stdout, 'buffer'):
@@ -39,7 +41,7 @@ META_PATH = OUTPUT_DIR / "model_meta.json"
 
 FEATURE_COLS = [
     # Features curatives (8)
-    "nb_cura_roll3", "duree_cura_h", "nb_curatif", "duree_cura_roll3",
+    "nb_cura_roll3", "duree_cura_h", "nb_curatif",
     "nb_cura_lag1", "duree_cura_lag1", "nb_cura_lag2", "nb_cura_lag3",
     # Features préventives (4)
     "nb_prev_lag1", "duree_prev_h", "nb_prev_roll3", "nb_preventif",
@@ -96,6 +98,20 @@ def rolling_features(group):
     return group
 
 
+def complete_monthly_history(group):
+    """Ajoute les mois sans intervention entre les premiers et derniers relevés."""
+    group = group.sort_values("annee_mois").set_index("annee_mois")
+    months = pd.date_range(group.index.min(), group.index.max(), freq="MS")
+    full = group.reindex(months)
+    full.index.name = "annee_mois"
+    full["equip_id"] = group["equip_id"].iloc[0]
+    for column in ("nb_ot_total", "nb_curatif", "nb_preventif", "duree_cura_h", "duree_prev_h"):
+        full[column] = full[column].fillna(0)
+    full["annee"] = full.index.year
+    full["mois_num"] = full.index.month
+    return full.reset_index()
+
+
 def build_dataset(engine):
     """Extrait, agrège et prépare le jeu de données de risque."""
     interventions = dw_query(engine, """
@@ -104,6 +120,7 @@ def build_dataset(engine):
         FROM fact_intervention fi
         JOIN dim_temps t ON t.temps_id = fi.temps_id
         WHERE fi.equip_id IS NOT NULL AND t.annee_mois IS NOT NULL
+        ORDER BY fi.equip_id, t.annee_mois
     """)
     monthly = interventions.groupby(["equip_id", "annee_mois", "annee", "mois_num"]).agg(
         nb_ot_total=("type_intervention", "count"),
@@ -122,17 +139,24 @@ def build_dataset(engine):
             FROM fact_arret fa JOIN dim_temps t ON t.temps_id = fa.temps_id
             WHERE fa.equip_id IS NOT NULL AND t.annee_mois IS NOT NULL
             GROUP BY fa.equip_id, t.annee_mois
+            ORDER BY fa.equip_id, t.annee_mois
         """)
         stops["annee_mois"] = pd.to_datetime(stops["annee_mois"] + "-01")
         monthly = monthly.merge(stops, on=["equip_id", "annee_mois"], how="left")
     except Exception as error:
         print(f"  Avertissement : métriques fact_arret indisponibles ({error}).")
 
+    monthly = monthly.groupby("equip_id", group_keys=False).apply(complete_monthly_history)
     featured_all = monthly.groupby("equip_id", group_keys=False).apply(rolling_features)
     featured_all = featured_all.sort_values(["equip_id", "annee_mois"]).copy()
     next_curative = featured_all.groupby("equip_id")["nb_curatif"].shift(-1)
-    historical_median = featured_all.groupby("equip_id")["nb_curatif"].transform("median")
-    featured_all["curatif_mois_suivant"] = (next_curative > historical_median).astype(int)
+    # La référence est connue à t : elle ne contient jamais le futur (t+1 et après).
+    historical_median = featured_all.groupby("equip_id")["nb_curatif"].transform(
+        lambda values: values.expanding(min_periods=1).median()
+    )
+    featured_all["curatif_mois_suivant"] = np.where(
+        next_curative.notna(), (next_curative > historical_median).astype(int), np.nan
+    )
 
     last_month = featured_all.groupby("equip_id")["annee_mois"].transform("max")
     training = featured_all[featured_all["annee_mois"] < last_month].copy()
@@ -144,6 +168,14 @@ def build_dataset(engine):
     scoring = featured_all.dropna(subset=required_history).copy()
     scoring[available] = scoring[available].fillna(0)
     return interventions, training, scoring, available
+
+
+def data_fingerprint(training, features):
+    """Empreinte des données d'entraînement, pour tracer quel snapshot a produit quel modèle."""
+    payload = training[["equip_id", "annee_mois"] + features + ["curatif_mois_suivant"]]
+    payload = payload.sort_values(["equip_id", "annee_mois"])
+    raw = pd.util.hash_pandas_object(payload, index=False).values.tobytes()
+    return hashlib.sha256(raw).hexdigest()[:16]
 
 
 def best_f1_threshold(y_true, probabilities):
@@ -203,10 +235,11 @@ def evaluate_model(name, model, X_train, X_test, y_train, y_test):
     """Évalue un modèle et retourne les métriques."""
     model.fit(X_train, y_train)
     y_proba = model.predict_proba(X_test)[:, 1]
-    threshold = best_f1_threshold(y_test, y_proba)
+    threshold = 0.5
     y_pred = (y_proba >= threshold).astype(int)
 
     auc = roc_auc_score(y_test, y_proba) if len(np.unique(y_test)) > 1 else 0.5
+    tn, fp, fn, tp = confusion_matrix(y_test, y_pred, labels=[0, 1]).ravel()
     return {
         "model": name,
         "model_obj": model,
@@ -216,6 +249,7 @@ def evaluate_model(name, model, X_train, X_test, y_train, y_test):
         "precision": round(float(precision_score(y_test, y_pred, zero_division=0)), 4),
         "recall": round(float(recall_score(y_test, y_pred, zero_division=0)), 4),
         "f1": round(float(f1_score(y_test, y_pred, zero_division=0)), 4),
+        "vp": int(tp), "fp": int(fp), "fn": int(fn), "vn": int(tn),
     }
 
 
@@ -245,9 +279,13 @@ def main():
         print("Données insuffisantes pour entraîner le modèle de risque.")
         return
     positives = int(training["curatif_mois_suivant"].sum())
+    fingerprint = data_fingerprint(training, features)
+    period_min = training["annee_mois"].min().strftime("%Y-%m")
+    period_max = training["annee_mois"].max().strftime("%Y-%m")
     print(f"  Équipements : {interventions.equip_id.nunique()} | interventions : {len(interventions):,}")
     print(f"  Observations entraînement : {len(training):,} | features : {len(features)}")
     print(f"  Classes : risque cible=1 : {positives} ({positives / len(training) * 100:.1f} %) | cible=0 : {len(training) - positives}")
+    print(f"  Fingerprint données : {fingerprint} | Période : {period_min} → {period_max}")
 
     # CRISP-DM — Modeling : split strictement temporel 80/20.
     chronological = training.sort_values(["annee_mois", "equip_id"]).reset_index(drop=True)
@@ -264,13 +302,28 @@ def main():
     print(f"\n[2/4] Modeling — split temporel : train={len(train):,}, test={len(test):,}")
     
     # Benchmark de plusieurs modèles
+    # Le seuil est choisi sur une validation temporelle interne, jamais sur le test.
+    validation_index = int(len(train) * 0.8)
+    X_fit, y_fit = X_train[:validation_index], y_train[:validation_index]
+    X_validation, y_validation = X_train[validation_index:], y_train[validation_index:]
     models = build_models(y_train)
     results = []
     print("  Benchmark des modèles en cours...")
     for name, model in models.items():
+        threshold_model = clone(model)
+        threshold_model.fit(X_fit, y_fit)
+        threshold = best_f1_threshold(y_validation, threshold_model.predict_proba(X_validation)[:, 1])
         result = evaluate_model(name, model, X_train, X_test, y_train, y_test)
+        y_pred = (result["model_obj"].predict_proba(X_test)[:, 1] >= threshold).astype(int)
+        result["threshold_f1"] = round(float(threshold), 3)
+        result["accuracy"] = round(float(accuracy_score(y_test, y_pred)), 4)
+        result["precision"] = round(float(precision_score(y_test, y_pred, zero_division=0)), 4)
+        result["recall"] = round(float(recall_score(y_test, y_pred, zero_division=0)), 4)
+        result["f1"] = round(float(f1_score(y_test, y_pred, zero_division=0)), 4)
+        result["vn"], result["fp"], result["fn"], result["vp"] = map(int, confusion_matrix(y_test, y_pred, labels=[0, 1]).ravel())
         results.append(result)
-        print(f"    {name}: AUC={result['auc']:.4f} | F1={result['f1']:.4f} | Precision={result['precision']:.4f} | Recall={result['recall']:.4f}")
+        print(f"    {name}: AUC={result['auc']:.4f} | Accuracy={result['accuracy']:.4f} | F1={result['f1']:.4f} | Precision={result['precision']:.4f} | Recall={result['recall']:.4f}")
+        print(f"      Matrice de confusion : VP={result['vp']} | FP={result['fp']} | FN={result['fn']} | VN={result['vn']}")
     
     # Sélection du meilleur modèle par AUC
     best_result = max(results, key=lambda x: x["auc"])
@@ -337,6 +390,7 @@ def main():
         "scored_at": datetime.now().isoformat(),
         "target": "nombre de curatifs du mois suivant > médiane historique de l’équipement",
         "risk_percentiles": {"modere": 66, "eleve": 85}, "stats": stats,
+        "data_fingerprint": fingerprint, "data_period": {"min": period_min, "max": period_max},
     }
     with META_PATH.open("w", encoding="utf-8") as stream:
         json.dump(meta, stream, ensure_ascii=False, indent=2)

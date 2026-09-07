@@ -1,15 +1,14 @@
 {
-  "model_name": "Random Forest",
+  "model_name": "Gradient Boosting + Calibration",
   "version": "risk-only-1.0",
-  "auc": 0.6936,
-  "train_auc": 0.8646,
-  "threshold": 0.451,
-  "n_features": 21,
+  "auc": 0.7426,
+  "train_auc": 0.8491,
+  "threshold": 0.223,
+  "n_features": 20,
   "features": [
     "nb_cura_roll3",
     "duree_cura_h",
     "nb_curatif",
-    "duree_cura_roll3",
     "nb_cura_lag1",
     "duree_cura_lag1",
     "nb_cura_lag2",
@@ -28,18 +27,23 @@
     "annee",
     "nb_ot_total"
   ],
-  "n_train": 2398,
-  "n_test": 600,
-  "trained_at": "2026-09-05T07:52:30.700035",
-  "scored_at": "2026-09-05T07:52:30.876875",
+  "n_train": 5131,
+  "n_test": 1283,
+  "trained_at": "2026-09-07T08:30:25.379437",
+  "scored_at": "2026-09-07T08:30:25.473030",
   "target": "nombre de curatifs du mois suivant > médiane historique de l’équipement",
   "risk_percentiles": {
     "modere": 66,
     "eleve": 85
   },
   "stats": {
-    "eleve": 94,
-    "modere": 118,
-    "faible": 413
+    "eleve": 83,
+    "modere": 127,
+    "faible": 415
+  },
+  "data_fingerprint": "e23a6fef0fc2f097",
+  "data_period": {
+    "min": "2025-02",
+    "max": "2026-03"
   }
 }

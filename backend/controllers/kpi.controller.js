@@ -79,7 +79,7 @@ const getKpiResponsable = async (req, res) => {
     const tauxReal   = totalOt > 0 ? Math.round((otTerminees / totalOt) * 100) : 0;
 
     
-    let mtbfMoyen = null;
+    let mtbfMoyen = 0;
     let nbNonConformes = 0;
     let dwDisponible = false;
     try {
@@ -91,7 +91,7 @@ const getKpiResponsable = async (req, res) => {
         JOIN dim_temps dt ON dt.temps_id = fa.temps_id
         WHERE dt.annee_mois = (SELECT MAX(annee_mois) FROM dim_temps)
       `);
-      mtbfMoyen      = parseFloat(mtbfRes.rows[0]?.mtbf_moyen) || null;
+      mtbfMoyen      = parseFloat(mtbfRes.rows[0]?.mtbf_moyen) || 0;
       nbNonConformes = parseInt(mtbfRes.rows[0]?.nb_non_conformes) || 0;
       dwDisponible   = true;
     } catch (_) {}

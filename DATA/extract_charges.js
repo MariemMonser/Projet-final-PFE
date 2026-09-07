@@ -2,7 +2,7 @@ const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const fs        = require("fs");
 const path      = require("path");
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// Config 
 const PDF_DIR    = "./Divers";
 const OUTPUT_CSV = "./output/charges_employes.csv";
 
@@ -25,6 +25,16 @@ const RE_DATE       = /^\d{2}\/\d{2}\/\d{4}$/;
 const RE_HOURS      = /^\d+,\d+$/;
 const RE_MAT        = /^\d{4}$/;
 const RE_DATE_FUSED = /\d{2}\/\d{2}\/\d{4}.*$/;
+
+
+const RE_EQUIP_TAIL_KNOWN = /(EOT-[A-Z]-\d{1,3}|EOT-?\d{3,7}|VAL-F-\d{1,3}|POSTE-\d{1,3}|TROLLEY-\d{1,3}|INF-[A-Z]+(?:-\d{1,3})?)\s*$/;
+const RE_EQUIP_TAIL_GENERIC = /([A-Z]{2,5}\d{5,7})\s*$/;
+
+function extractEquipTail(text) {
+    const known = text.match(RE_EQUIP_TAIL_KNOWN);
+    if (known) return known;
+    return text.match(RE_EQUIP_TAIL_GENERIC);
+}
 
 const SKIP_WORDS = new Set(["OT","Matricule","Ligne","SITUATION",
                              "Charges","Mois","Entité","Page"]);
@@ -210,7 +220,19 @@ async function parsePdf(pdfPath) {
                      .map(w => w.text).join(" ").trim() || "Intervention";
 
             const equipWord = row.find(w => w.x0 >= COL_EQUIP_MIN && w.x0 < COL_EQUIP_MAX);
-            const equip     = equipWord ? equipWord.text : "";
+            let equip = equipWord ? equipWord.text : "";
+            let intervClean = interv;
+
+            // Si la colonne équipement est vide, c'est très probablement parce que
+            // pdfjs a fusionné le code équipement dans le texte d'intervention
+            // (cas intervFused). On tente de le récupérer en fin de chaîne.
+            if (!equip && intervFused) {
+                const tailMatch = extractEquipTail(intervFused);
+                if (tailMatch) {
+                    equip = tailMatch[1];
+                    intervClean = intervFused.slice(0, tailMatch.index).trim() || intervFused;
+                }
+            }
 
             const descWords = row
                 .filter(w => w.x0 >= COL_EQUIP_MAX && w.x0 < COL_DESC_MAX)
@@ -245,7 +267,7 @@ async function parsePdf(pdfPath) {
                 matricule,
                 nom_prenom:             nom,
                 numero_ot:              numero,
-                type_intervention:      interv,
+                type_intervention:      intervClean,
                 code_equipement:        equip || null,
                 description_equipement: desc,
                 date_debut:             timeVal ? `${dateVal} ${timeVal}` : dateVal,
