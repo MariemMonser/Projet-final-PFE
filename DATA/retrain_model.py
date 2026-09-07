@@ -40,16 +40,14 @@ PREDS_PATH = OUTPUT_DIR / "predictions_risque.csv"
 META_PATH = OUTPUT_DIR / "model_meta.json"
 
 FEATURE_COLS = [
-    # Features curatives (8)
+    # Features curatives (7)
     "nb_cura_roll3", "duree_cura_h", "nb_curatif",
     "nb_cura_lag1", "duree_cura_lag1", "nb_cura_lag2", "nb_cura_lag3",
     # Features préventives (4)
     "nb_prev_lag1", "duree_prev_h", "nb_prev_roll3", "nb_preventif",
-    # Features de fiabilité (3)
-    "disponibilite_pct_roll3", "mtbf_h_roll3", "disponibilite_pct_lag1",
-    # Features temporelles et de ratio (6)
+    # Features temporelles et de ratio (5)
     "mois_num", "ratio_cura_3m", "mois_depuis_cura", "mois_depuis_prev",
-    "annee", "nb_ot_total",
+    "nb_ot_total",
 ]
 
 

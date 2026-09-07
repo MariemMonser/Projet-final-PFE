@@ -4,7 +4,7 @@
   "auc": 0.7426,
   "train_auc": 0.8491,
   "threshold": 0.223,
-  "n_features": 20,
+  "n_features": 16,
   "features": [
     "nb_cura_roll3",
     "duree_cura_h",
@@ -17,20 +17,16 @@
     "duree_prev_h",
     "nb_prev_roll3",
     "nb_preventif",
-    "disponibilite_pct_roll3",
-    "mtbf_h_roll3",
-    "disponibilite_pct_lag1",
     "mois_num",
     "ratio_cura_3m",
     "mois_depuis_cura",
     "mois_depuis_prev",
-    "annee",
     "nb_ot_total"
   ],
   "n_train": 5131,
   "n_test": 1283,
-  "trained_at": "2026-09-07T08:30:25.379437",
-  "scored_at": "2026-09-07T08:30:25.473030",
+  "trained_at": "2026-09-07T11:25:37.340837",
+  "scored_at": "2026-09-07T11:25:37.486944",
   "target": "nombre de curatifs du mois suivant > médiane historique de l’équipement",
   "risk_percentiles": {
     "modere": 66,
@@ -41,7 +37,7 @@
     "modere": 127,
     "faible": 415
   },
-  "data_fingerprint": "e23a6fef0fc2f097",
+  "data_fingerprint": "86f9143d6f686304",
   "data_period": {
     "min": "2025-02",
     "max": "2026-03"

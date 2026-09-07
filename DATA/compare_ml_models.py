@@ -18,6 +18,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.base import clone
 from sklearn.metrics import (
     roc_auc_score,
     precision_recall_curve,
@@ -50,47 +51,18 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 COMPARISON_PATH = OUTPUT_DIR / "model_comparison.csv"
 
 FEATURE_COLS = [
-    "nb_cura_lag1", "nb_cura_lag2", "nb_cura_lag3",
-    "nb_prev_lag1", "nb_prev_lag2", "nb_prev_lag3",
-    "duree_cura_lag1", "duree_cura_lag2", "duree_cura_lag3",
-    "nb_cura_roll3", "nb_prev_roll3", "duree_cura_roll3",
-    "mois_depuis_cura", "mois_depuis_prev", "ratio_cura_3m",
-    "nb_ot_total", "nb_curatif", "nb_preventif",
-    "duree_cura_h", "duree_prev_h", "annee", "mois_num",
-    "mtbf_h_lag1", "mtbf_h_roll3",
-    "disponibilite_pct_lag1", "disponibilite_pct_roll3",
-    "nb_arrets_lag1", "nb_arrets_roll3",
-    "t_arret_lag1", "t_arret_roll3",
+    # Features curatives (7)
+    "nb_cura_roll3", "duree_cura_h", "nb_curatif",
+    "nb_cura_lag1", "duree_cura_lag1", "nb_cura_lag2", "nb_cura_lag3",
+    # Features préventives (4)
+    "nb_prev_lag1", "duree_prev_h", "nb_prev_roll3", "nb_preventif",
+    # Features temporelles et de ratio (5)
+    "mois_num", "ratio_cura_3m", "mois_depuis_cura", "mois_depuis_prev",
+    "nb_ot_total",
 ]
 
-# Reduced feature set based on correlation analysis
-REDUCED_FEATURE_COLS = [
-    # Curative - keep only recent + trend
-    "nb_cura_lag1",
-    "nb_cura_roll3",
-    "duree_cura_lag1",
-    "duree_cura_roll3",
-    
-    # Preventive - keep only recent + trend
-    "nb_prev_lag1",
-    "nb_prev_roll3",
-    
-    # Time since last event
-    "mois_depuis_cura",
-    "mois_depuis_prev",
-    
-    # Ratio (already captures relationship)
-    "ratio_cura_3m",
-    
-    # Reliability metrics (keep one from each correlated group)
-    "mtbf_h_roll3",
-    "disponibilite_pct_roll3",
-    "nb_arrets_roll3",
-    
-    # Temporal
-    "annee",
-    "mois_num",
-]
+# Benchmark utilise uniquement les features de production pour cohérence
+# (compare_ml_models.py utilise maintenant build_deployment_dataset)
 
 
 def get_engine():
@@ -319,9 +291,22 @@ def best_f1_threshold(y_true, y_proba):
 
 
 def evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols, output_dir=None):
+    # Split train into fit + validation for threshold selection (80/20 of train)
+    validation_idx = int(len(X_train) * 0.8)
+    X_fit, y_fit = X_train[:validation_idx], y_train[:validation_idx]
+    X_validation, y_validation = X_train[validation_idx:], y_train[validation_idx:]
+    
+    # Fit on full training data
     model.fit(X_train, y_train)
+    
+    # Calculate threshold on validation set, not test set
+    threshold_model = clone(model)
+    threshold_model.fit(X_fit, y_fit)
+    y_proba_validation = threshold_model.predict_proba(X_validation)[:, 1]
+    threshold = best_f1_threshold(y_validation, y_proba_validation)
+    
+    # Evaluate on test set with validation-derived threshold
     y_proba = model.predict_proba(X_test)[:, 1]
-    threshold = best_f1_threshold(y_test, y_proba)
     y_pred = (y_proba >= threshold).astype(int)
 
     auc = roc_auc_score(y_test, y_proba) if len(np.unique(y_test)) > 1 else 0.5
@@ -354,6 +339,14 @@ def evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols, out
             if hasattr(step_obj, 'feature_importances_'):
                 feature_importance = dict(zip(feat_cols, step_obj.feature_importances_))
                 break
+    elif hasattr(model, 'calibrated_classifiers_'):
+        # For CalibratedClassifierCV - extract from base estimator.
+        # sklearn renamed base_estimator -> estimator in 1.2 (removed in 1.4+),
+        # so try both names for compatibility across versions.
+        calibrated = model.calibrated_classifiers_[0]
+        base_model = getattr(calibrated, 'estimator', None) or getattr(calibrated, 'base_estimator', None)
+        if base_model is not None and hasattr(base_model, 'feature_importances_'):
+            feature_importance = dict(zip(feat_cols, base_model.feature_importances_))
     
     return {
         "model": name,
@@ -405,27 +398,7 @@ def main():
     X_train_clean, X_test_clean = X_clean[:split_idx], X_clean[split_idx:]
     y_train, y_test = y[:split_idx], y[split_idx:]
     
-    # Prepare reduced feature set (manual)
-    # Le benchmark partagé ne retient que les variables réellement préparées
-    # par le pipeline de production (et donc déjà imputées).
-    reduced_feat_cols = [col for col in REDUCED_FEATURE_COLS if col in feat_cols]
-    print(f"  Features réduites (manuelles) : {len(reduced_feat_cols)}")
-    
-    # Prepare feature importance-based selection
-    print("\n  Sélection de features par importance (Random Forest)...")
-    importance_feat_cols, initial_importance = select_features_by_importance(
-        X_train, y_train, feat_cols, n_features=22
-    )
-    print(f"  Features par importance : {len(importance_feat_cols)}")
-    print("  Top 10 features par importance:")
-    for feat, imp in sorted(initial_importance.items(), key=lambda x: x[1], reverse=True)[:10]:
-        print(f"    {feat}: {imp:.4f}")
-    
-    X_reduced = featured[reduced_feat_cols].values
-    X_importance = featured[importance_feat_cols].values
-    X_train_reduced, X_test_reduced = X_reduced[:split_idx], X_reduced[split_idx:]
-    X_train_importance, X_test_importance = X_importance[:split_idx], X_importance[split_idx:]
-
+    # Benchmark utilise uniquement les features de production pour cohérence
     pos = int(y.sum())
     neg = int(len(y) - pos)
     print(f"  Dataset : {len(featured):,} observations | {len(feat_cols)} features")
@@ -437,8 +410,8 @@ def main():
     rows = []
     models = build_models(y_train, feat_cols_clean)
 
-    # Evaluate models with original features
-    print("\n  === Évaluation avec features originales ===")
+    # Evaluate models with production features (FEATURE_COLS)
+    print("\n  === Évaluation avec features de production ===")
     for name, model in models.items():
         print(f"\n  Entrainement : {name}")
         try:
@@ -448,7 +421,7 @@ def main():
             else:
                 row = evaluate_model(name, model, X_train, X_test, y_train, y_test, feat_cols, OUTPUT_DIR)
             row["status"] = "ok"
-            row["feature_set"] = "original"
+            row["feature_set"] = "production"
             rows.append(row)
             print(
                 f"    AUC={row['auc']:.4f} | F1={row['f1']:.4f} | "
@@ -465,71 +438,7 @@ def main():
                 "f1": np.nan,
                 "n_features": np.nan,
                 "status": f"erreur: {e}",
-                "feature_set": "original",
-                "confusion_matrix": None,
-            })
-            print(f"    ERREUR : {e}")
-    
-    # Evaluate models with reduced feature set (manual)
-    print("\n  === Évaluation avec features réduites (manuelles) ===")
-    for name, model in models.items():
-        print(f"\n  Entrainement : {name} (reduced)")
-        try:
-            if name == "Logistic Regression":
-                row = evaluate_model(name, model, X_train_reduced, X_test_reduced, y_train, y_test, reduced_feat_cols, OUTPUT_DIR)
-            else:
-                row = evaluate_model(name, model, X_train_reduced, X_test_reduced, y_train, y_test, reduced_feat_cols, OUTPUT_DIR)
-            row["status"] = "ok"
-            row["feature_set"] = "reduced"
-            rows.append(row)
-            print(
-                f"    AUC={row['auc']:.4f} | F1={row['f1']:.4f} | "
-                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Accuracy={row['accuracy']:.4f} | Features={row['n_features']}"
-            )
-        except Exception as e:
-            rows.append({
-                "model": name,
-                "auc": np.nan,
-                "threshold_f1": np.nan,
-                "accuracy": np.nan,
-                "precision": np.nan,
-                "recall": np.nan,
-                "f1": np.nan,
-                "n_features": np.nan,
-                "status": f"erreur: {e}",
-                "feature_set": "reduced",
-                "confusion_matrix": None,
-            })
-            print(f"    ERREUR : {e}")
-    
-    # Evaluate models with feature importance-based selection
-    print("\n  === Évaluation avec features par importance ===")
-    for name, model in models.items():
-        print(f"\n  Entrainement : {name} (importance)")
-        try:
-            if name == "Logistic Regression":
-                row = evaluate_model(name, model, X_train_importance, X_test_importance, y_train, y_test, importance_feat_cols, OUTPUT_DIR)
-            else:
-                row = evaluate_model(name, model, X_train_importance, X_test_importance, y_train, y_test, importance_feat_cols, OUTPUT_DIR)
-            row["status"] = "ok"
-            row["feature_set"] = "importance"
-            rows.append(row)
-            print(
-                f"    AUC={row['auc']:.4f} | F1={row['f1']:.4f} | "
-                f"Precision={row['precision']:.4f} | Recall={row['recall']:.4f} | Accuracy={row['accuracy']:.4f} | Features={row['n_features']}"
-            )
-        except Exception as e:
-            rows.append({
-                "model": name,
-                "auc": np.nan,
-                "threshold_f1": np.nan,
-                "accuracy": np.nan,
-                "precision": np.nan,
-                "recall": np.nan,
-                "f1": np.nan,
-                "n_features": np.nan,
-                "status": f"erreur: {e}",
-                "feature_set": "importance",
+                "feature_set": "production",
                 "confusion_matrix": None,
             })
             print(f"    ERREUR : {e}")
@@ -543,68 +452,56 @@ def main():
     sort_cols = ["status", "feature_set", "auc", "f1"]
     results = results.sort_values(sort_cols, ascending=[True, False, False, False])
     
-    # Compare AUC between original, reduced, and importance-based feature sets
-    print("\n  === Comparaison Original vs Reduced vs Importance ===")
-    for model_name in results["model"].unique():
-        original_row = results[(results["model"] == model_name) & (results["feature_set"] == "original")]
-        reduced_row = results[(results["model"] == model_name) & (results["feature_set"] == "reduced")]
-        importance_row = results[(results["model"] == model_name) & (results["feature_set"] == "importance")]
-        
-        if not original_row.empty:
-            orig_auc = original_row["auc"].iloc[0]
-            print(f"    {model_name}:")
-            print(f"      Original: {orig_auc:.4f}")
-            
-            if not reduced_row.empty:
-                red_auc = reduced_row["auc"].iloc[0]
-                diff = orig_auc - red_auc
-                status = "OK" if diff <= 0.01 else "DEGRADATION"
-                print(f"      Reduced:  {red_auc:.4f} (diff={diff:.4f}) [{status}]")
-            
-            if not importance_row.empty:
-                imp_auc = importance_row["auc"].iloc[0]
-                diff = orig_auc - imp_auc
-                status = "OK" if diff <= 0.01 else "DEGRADATION"
-                print(f"      Importance: {imp_auc:.4f} (diff={diff:.4f}) [{status}]")
-    
-    # Extract and save feature importance
-    print("\n  === Feature Importance ===")
-    importance_data = []
+    # Résultats de benchmark (features de production)
+    print("\n  === Résultats de benchmark (features de production) ===")
     for _, row in results.iterrows():
-        if isinstance(row["feature_importance"], dict):
-            for feat, imp in row["feature_importance"].items():
-                importance_data.append({
-                    "model": row["model"],
-                    "feature_set": row["feature_set"],
-                    "feature": feat,
-                    "importance": round(float(imp), 4)
-                })
+        print(f"    {row['model']}: AUC={row['auc']:.4f} | F1={row['f1']:.4f} | Accuracy={row['accuracy']:.4f} | Precision={row['precision']:.4f} | Recall={row['recall']:.4f}")
     
-    if importance_data:
+    # Extract and save feature importance - use the best model (Gradient Boosting)
+    print("\n  === Feature Importance ===")
+    best_result = max(rows, key=lambda x: x["auc"])
+    if best_result["feature_importance"]:
+        importance_dict = best_result["feature_importance"]
+        importance_data = [{
+            "model": best_result["model"],
+            "feature_set": best_result["feature_set"],
+            "feature": feat,
+            "importance": round(float(imp), 4)
+        } for feat, imp in importance_dict.items()]
+        
         importance_df = pd.DataFrame(importance_data)
         importance_path = OUTPUT_DIR / "feature_importance.csv"
         importance_df.to_csv(importance_path, index=False, encoding="utf-8-sig")
         print(f"    Feature importance sauvegardée : {importance_path}")
         
-        # Show top 10 features for each model
-        for model_name in importance_df["model"].unique():
-            top_features = importance_df[importance_df["model"] == model_name].sort_values("importance", ascending=False).head(10)
-            print(f"\n    Top 10 features - {model_name}:")
-            for _, feat_row in top_features.iterrows():
-                print(f"      {feat_row['feature']}: {feat_row['importance']:.4f}")
+        # Show top 10 features
+        top_features = importance_df.sort_values("importance", ascending=False).head(10)
+        print(f"\n    Top 10 features - {best_result['model']}:")
+        for _, feat_row in top_features.iterrows():
+            print(f"      {feat_row['feature']}: {feat_row['importance']:.4f}")
+    else:
+        print("    Aucune feature importance disponible pour le meilleur modèle")
     
     # CRISP-DM — Deployment : artefact de benchmark du seul modèle de risque.
     results.to_csv(COMPARISON_PATH, index=False, encoding="utf-8-sig")
 
     print("\n" + results[["model", "feature_set", "auc", "accuracy", "precision", "recall", "f1", "threshold_f1", "n_features", "status"]].to_string(index=False))
     
-    # Save importance-based feature list
-    importance_list_path = OUTPUT_DIR / "importance_features_list.txt"
-    with open(importance_list_path, 'w', encoding='utf-8') as f:
-        f.write("Features sélectionnées par importance (Random Forest):\n")
-        for i, (feat, imp) in enumerate(sorted(initial_importance.items(), key=lambda x: x[1], reverse=True)[:len(importance_feat_cols)], 1):
-            f.write(f"{i}. {feat}: {imp:.4f}\n")
-    print(f"\n  Liste features importance sauvegardée : {importance_list_path}")
+    # Save feature importance from the best model (Random Forest)
+    best_result = max(rows, key=lambda x: x["auc"])
+    if best_result["feature_importance"]:
+        importance_df = pd.DataFrame.from_dict(best_result["feature_importance"], orient='index', columns=['importance'])
+        importance_df = importance_df.sort_values('importance', ascending=False)
+        importance_df.to_csv(OUTPUT_DIR / "feature_importance.csv", encoding='utf-8-sig')
+        
+        importance_list_path = OUTPUT_DIR / "importance_features_list.txt"
+        with open(importance_list_path, 'w', encoding='utf-8') as f:
+            f.write(f"Feature Importance - {best_result['model']}:\n")
+            for i, (feat, imp) in enumerate(importance_df.itertuples(), 1):
+                f.write(f"{i}. {feat}: {imp:.4f}\n")
+        print(f"\n  Feature importance sauvegardée : {OUTPUT_DIR / 'feature_importance.csv'}")
+        print(f"  Liste features importance sauvegardée : {importance_list_path}")
+    
     print(f"\n  Comparaison sauvegardee : {COMPARISON_PATH}")
     print(f"  EDA sauvegardee : {OUTPUT_DIR / 'correlation_heatmap.png'}, {OUTPUT_DIR / 'boxplots_features.png'}")
     print(f"  Matrices de confusion sauvegardees dans : {OUTPUT_DIR}")

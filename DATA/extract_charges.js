@@ -2,7 +2,7 @@ const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const fs        = require("fs");
 const path      = require("path");
 
-// Config 
+// ── Config ────────────────────────────────────────────────────────────────────
 const PDF_DIR    = "./Divers";
 const OUTPUT_CSV = "./output/charges_employes.csv";
 
@@ -26,7 +26,13 @@ const RE_HOURS      = /^\d+,\d+$/;
 const RE_MAT        = /^\d{4}$/;
 const RE_DATE_FUSED = /\d{2}\/\d{2}\/\d{4}.*$/;
 
-
+// Motifs de code équipement connus, recherchés en fin de chaîne — utilisé
+// uniquement quand pdfjs a fusionné intervention + code en un seul token
+// (cas RE_OT_FUSED), sans espace garanti entre le mot précédent et le code
+// (ex: "pcbEOT010019", "étiquetteVAL-F-18").
+// Essayés dans l'ordre : préfixes connus d'abord (précis), motif générique
+// en dernier recours seulement (peut "manger" des lettres du mot précédent
+// si tout est en majuscules, ex: "NETTOYEREOT010153").
 const RE_EQUIP_TAIL_KNOWN = /(EOT-[A-Z]-\d{1,3}|EOT-?\d{3,7}|VAL-F-\d{1,3}|POSTE-\d{1,3}|TROLLEY-\d{1,3}|INF-[A-Z]+(?:-\d{1,3})?)\s*$/;
 const RE_EQUIP_TAIL_GENERIC = /([A-Z]{2,5}\d{5,7})\s*$/;
 
