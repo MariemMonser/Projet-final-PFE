@@ -1,5 +1,3 @@
-
-
 const db = require('../config/db');
 const dw = require('../config/db_dw');
 const nodemailer = require('nodemailer');

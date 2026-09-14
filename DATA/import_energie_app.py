@@ -1,18 +1,6 @@
 import io, sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-"""
-import_energie_app.py
---------------------
-Importe les données énergie des CSVs (output de l'ETL) vers
-les tables applicatives de eleonetech_db :
-  - eau_journalier.csv        → consommation_eau
-  - electricite_journalier.csv → consommation_electricite
-
-La table production_photovoltaique n'est pas touchée
-(la DB contient déjà plus de données que le CSV).
-"""
-
 import os
 import math
 import pandas as pd
@@ -46,10 +34,6 @@ def nan_to_none(v):
     except TypeError:
         return v
 
-# ── EAU ───────────────────────────────────────────────────────────────────────
-# Colonnes CSV : id, date_releve, annee_mois, index_compteur_m3,
-#                consommation_jour_m3, cout_jour_tnd, created_at
-# Table app    : id, date_releve, compteur, consommation_jour, cout_total
 def importer_eau():
     path = os.path.join(OUTPUT_DIR, 'eau_journalier.csv')
     if not os.path.exists(path):

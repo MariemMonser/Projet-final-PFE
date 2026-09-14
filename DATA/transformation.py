@@ -1,6 +1,6 @@
 """
 transformation.py
-==================
+===transform===============
 stg_* → stg_clean_* dans eleonetech_staging
 
 Tables :
@@ -487,9 +487,6 @@ def transform_charges(engine):
         df['code_equipement'] = df['code_equipement'].apply(
             lambda x: None if pd.isna(x) or str(x).lower() in ('nan','none','') else str(x).strip())
 
-        # Corrections validées pour les codes fusionnés au texte dans certains PDF.
-        # Le staging est rechargé à chaque pipeline : ce mapping doit donc être
-        # appliqué ici plutôt que par une mise à jour SQL ponctuelle.
         equipement_manuel_par_ot = {
             '2025096688': 'F42215',
             '2025096690': 'F41852',

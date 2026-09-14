@@ -1,5 +1,3 @@
-
-
 const db         = require('../config/db');
 const QRCode     = require('qrcode');
 const bcrypt     = require('bcryptjs');

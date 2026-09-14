@@ -25,8 +25,8 @@
   ],
   "n_train": 5131,
   "n_test": 1283,
-  "trained_at": "2026-09-07T11:25:37.340837",
-  "scored_at": "2026-09-07T11:25:37.486944",
+  "trained_at": "2026-09-08T08:13:15.996810",
+  "scored_at": "2026-09-08T08:13:16.238455",
   "target": "nombre de curatifs du mois suivant > médiane historique de l’équipement",
   "risk_percentiles": {
     "modere": 66,
